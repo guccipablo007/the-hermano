@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec /root/.hermes/scripts/hermes_rich_output_execute.py "$@"

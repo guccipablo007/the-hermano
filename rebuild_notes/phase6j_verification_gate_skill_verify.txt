@@ -1,0 +1,45 @@
+FILE_OK: /root/.hermes/skills/verification-gate/SKILL.md
+SIZE_BYTES: 1490
+PREVIEW_START
+1: # Verification Gate Skill
+2: 
+3: ## Purpose
+4: 
+5: Prevent fake success claims.
+6: 
+7: Use this skill whenever Hermes claims it created, edited, installed, tested, fetched, verified, or executed something.
+8: 
+9: ## Main Rule
+10: 
+11: If no actual tool output proves the claim, say:
+12: 
+13: `NOT VERIFIED`
+14: 
+15: ## Required Helper
+16: 
+17: Use:
+18: 
+19: `/root/.hermes/scripts/hermes_verify.py`
+20: 
+21: ## File Verification
+22: 
+23: Before saying a file was created or edited:
+24: 
+25: ```bash
+26: /root/.hermes/scripts/hermes_verify.py file --path /path/to/file
+27: ```
+28: 
+29: ## Script Verification
+30: 
+31: Before saying a script works:
+32: 
+33: ```bash
+34: /root/.hermes/scripts/hermes_verify.py script --path /path/to/script.py --test-cmd "python3 /path/to/script.py --help"
+35: ```
+36: 
+37: ## Source Quote Verification
+38: 
+39: Before saying a quote exists in a source:
+40: 
+...PREVIEW_TRUNCATED_AFTER_40_LINES
+PREVIEW_END

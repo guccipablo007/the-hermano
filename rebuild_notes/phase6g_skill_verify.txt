@@ -1,0 +1,45 @@
+FILE_OK: /root/.hermes/skills/model-router/SKILL.md
+SIZE_BYTES: 5997
+PREVIEW_START
+1: # Model Router Skill
+2: 
+3: ## Purpose
+4: 
+5: Use this skill when a user request would benefit from Hermes delegating work to a specialist model/worker route.
+6: 
+7: This skill supports the decentralized Hermes architecture:
+8: 
+9: User / Telegram
+10: ? Hermes Supervisor
+11: ? Task classification
+12: ? Specialist worker route
+13: ? Verification gate
+14: ? Final response
+15: 
+16: ## Core Rule
+17: 
+18: Understand the user's natural language first.
+19: 
+20: Do not use hardcoded phrase routing.
+21: 
+22: Routing must be based on:
+23: - task intent
+24: - complexity
+25: - tool needs
+26: - privacy risk
+27: - verification needs
+28: 
+29: ## Available Routes
+30: 
+31: Routing policy file:
+32: 
+33: `/root/.hermes/model_routing/routing_policy.yaml`
+34: 
+35: Manual model-call helper:
+36: 
+37: `/root/.hermes/scripts/hermes_model_call.py`
+38: 
+39: ### basic
+40: 
+...PREVIEW_TRUNCATED_AFTER_40_LINES
+PREVIEW_END

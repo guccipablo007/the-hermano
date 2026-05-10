@@ -1,0 +1,3 @@
+name: document-output-router
+version: "1.0"
+description: Deterministic document output router for PDF, DOCX, Markdown, and HTML Telegram delivery.

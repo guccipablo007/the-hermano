@@ -1,0 +1,54 @@
+/root/.hermes/skills/research/research-paper-writing/SKILL.md:1181:# Or manual: pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
+/root/.hermes/skills/research/research-paper-writing/SKILL.md:1494:pdflatex paper_diff.tex
+/root/.hermes/skills/research/research-paper-writing/SKILL.md:1746:Run these automated checks **before** attempting `pdflatex`. Catching errors here is faster than debugging compiler output.
+/root/.hermes/skills/research/research-paper-writing/SKILL.md:1798:# Or manual (triple pdflatex + bibtex for cross-references)
+/root/.hermes/skills/research/research-paper-writing/SKILL.md:1799:pdflatex -interaction=nonstopmode main.tex
+/root/.hermes/skills/research/research-paper-writing/SKILL.md:1801:pdflatex -interaction=nonstopmode main.tex
+/root/.hermes/skills/research/research-paper-writing/SKILL.md:1802:pdflatex -interaction=nonstopmode main.tex
+/root/.hermes/skills/research/research-paper-writing/templates/aaai2026/README.md:255:pdflatex aaai2026-unified-template.tex
+/root/.hermes/skills/research/research-paper-writing/templates/aaai2026/README.md:257:pdflatex aaai2026-unified-template.tex
+/root/.hermes/skills/research/research-paper-writing/templates/aaai2026/README.md:258:pdflatex aaai2026-unified-template.tex
+/root/.hermes/skills/research/research-paper-writing/templates/aaai2026/README.md:269:**解决方案**: 确保按照标准的LaTeX编译流程：pdflatex → bibtex → pdflatex → pdflatex
+/root/.hermes/skills/research/research-paper-writing/templates/aaai2026/README.md:505:pdflatex aaai2026-unified-template.tex
+/root/.hermes/skills/research/research-paper-writing/templates/aaai2026/README.md:507:pdflatex aaai2026-unified-template.tex
+/root/.hermes/skills/research/research-paper-writing/templates/aaai2026/README.md:508:pdflatex aaai2026-unified-template.tex
+/root/.hermes/skills/research/research-paper-writing/templates/aaai2026/README.md:519:**Solution**: Follow the standard LaTeX compilation process: pdflatex → bibtex → pdflatex → pdflatex
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:12:1. Install [TeX Live](https://www.tug.org/texlive/) (full distribution recommended)
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:14:   - Ubuntu: `sudo apt install texlive-full`
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:15:   - Windows: Download from [tug.org/texlive](https://www.tug.org/texlive/)
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:34:      "name": "pdflatex → bibtex → pdflatex × 2",
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:35:      "tools": ["pdflatex", "bibtex", "pdflatex", "pdflatex"]
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:45:pdflatex main.tex
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:48:pdflatex main.tex
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:50:pdflatex main.tex
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:51:pdflatex main.tex
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:84:pdflatex example_paper.tex
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:89:# Run bibtex after first pdflatex
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:90:pdflatex main.tex
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:92:pdflatex main.tex  # Incorporates bibliography
+/root/.hermes/skills/research/research-paper-writing/templates/README.md:93:pdflatex main.tex  # Resolves references
+/root/.hermes/skills/research/research-paper-writing/templates/icml2026/icml2026.sty:78:% - Updated to store the page size because pdflatex does compile the
+/root/.hermes/skills/research/research-paper-writing/templates/icml2026/icml2026.sty:213:% to ensure the letter format is used. pdflatex does compile the
+/root/.hermes/skills/research/research-paper-writing/templates/icml2026/icml2026.sty:216:% check whether pdflatex or latex is used.
+/root/.hermes/skills/research/research-paper-writing/templates/icml2026/example_paper.tex:202:Using \texttt{pdflatex} rather than \texttt{latex}, often gives better
+/root/.hermes/skills/research/research-paper-writing/templates/iclr2026/iclr2026_conference.tex:365:Consider directly generating PDF files using \verb+pdflatex+
+/root/.hermes/skills/research/research-paper-writing/templates/neurips2025/Makefile:10:	pdflatex -synctex=1 -interaction=nonstopmode $<
+/root/.hermes/skills/research/research-paper-writing/templates/neurips2025/Makefile:12:	pdflatex -synctex=1 -interaction=nonstopmode $<
+/root/.hermes/skills/research/research-paper-writing/templates/neurips2025/Makefile:13:	pdflatex -synctex=1 -interaction=nonstopmode $<
+/root/.hermes/skills/research/research-paper-writing/templates/colm2025/colm2025_conference.tex:252:Consider directly generating PDF files using \verb+pdflatex+
+/root/.hermes/skills/creative/manim-video/scripts/setup.sh:10:command -v pdflatex &>/dev/null && ok "LaTeX (pdflatex)" || { fail "LaTeX not found (macOS: brew install --cask mactex-no-gui)"; errors=$((errors+1)); }
+/root/.hermes/skills/creative/manim-video/SKILL.md:31:Run `scripts/setup.sh` to verify all dependencies. Requires: Python 3.10+, Manim Community Edition v0.20+ (`pip install manim`), LaTeX (`texlive-full` on Linux, `mactex` on macOS), and ffmpeg. Reference docs tested against Manim CE v0.20.1.
+/root/.hermes/skills/creative/manim-video/SKILL.md:52:| Math | LaTeX (texlive/MiKTeX) | Equation rendering via `MathTex` |
+/root/.hermes/skills/creative/manim-video/references/rendering.md:7:pdflatex --version    # LaTeX
+/root/.hermes/skills/creative/manim-video/references/troubleshooting.md:13:**LaTeX not installed**: `which pdflatex` -- install texlive-full or mactex.
+/root/.hermes/skills/creative/popular-web-designs/templates/superhuman.md:22:The design philosophy is maximum confidence through minimum decoration. Warm cream buttons (`#e9e5dd`) instead of bright CTAs, a near-absence of borders and shadows, and lavender purple (`#cbb7fb`) as the sole accent color. It's a productivity tool that markets itself like a luxury brand — every pixel earns its place, nothing is merely decorative. The brand naming convention extends to colors: the primary purple is called "Mysteria," straddling blue and purple with deliberate ambiguity.
+/root/.hermes/skills/creative/popular-web-designs/templates/warp.md:20:The typography is the secret weapon: Matter, a geometric sans-serif with distinctive character, deployed at Regular weight across virtually all text. The font choice is unusual for a developer tool — Matter has a softness and humanity that signals "this terminal is for everyone, not just greybeards." Combined with tight line-heights and controlled negative letter-spacing on headlines, the effect is refined and approachable simultaneously. Nature photography is woven between terminal screenshots, creating a visual language that says: this tool brings you closer to flow, to calm productivity.
+/root/.hermes/skills/creative/claude-design/SKILL.md:412:- software/productivity: precise sans with strong numeric treatment
+/root/.hermes/skills/creative/humanizer/SKILL.md:534:> The productivity claims are hard to verify. GitHub says Copilot users "accept 30% of suggestions," but acceptance is not correctness, and correctness is not value. The 2024 Uplevel study found no statistically significant difference in pull-request throughput between teams with and without AI assistants.
+/root/.hermes/skills/creative/humanizer/SKILL.md:550:> The productivity metrics are slippery. GitHub can say Copilot users "accept 30% of suggestions," but acceptance isn't correctness, and correctness isn't value. If you don't have tests, you're basically guessing.
+/root/.hermes/skills/productivity/maps/SKILL.md:10:    category: productivity
+/root/.hermes/skills/productivity/google-workspace/SKILL.md:40:GSETUP="python ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/setup.py"
+/root/.hermes/skills/productivity/google-workspace/SKILL.md:171:GAPI="python ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/google_api.py"
+/root/.hermes/skills/productivity/DESCRIPTION.md:2:description: Skills for document creation, presentations, spreadsheets, and other productivity workflows.
+/root/.hermes/skills/productivity/linear/SKILL.md:44:SCRIPT=$(dirname "$(find ~/.hermes -path '*skills/productivity/linear/scripts/linear_api.py' 2>/dev/null | head -1)")/linear_api.py
+/root/.hermes/skills/software-development/hermes-agent-skill-authoring/SKILL.md:100:Categories currently in repo (confirm with `ls skills/`): `autonomous-ai-agents`, `creative`, `data-science`, `devops`, `dogfood`, `email`, `gaming`, `github`, `leisure`, `mcp`, `media`, `mlops/*`, `note-taking`, `productivity`, `red-teaming`, `research`, `smart-home`, `social-media`, `software-development`.

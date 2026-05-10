@@ -1,0 +1,41 @@
+# Secrets / credentials
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+providers.env
+**/providers.env
+tokens/
+**/tokens/
+credentials/
+**/credentials/
+*credential*
+*credentials*
+*secret*
+*secrets*
+*token*
+*oauth*
+*.pem
+*.key
+*.p12
+*.crt
+
+# Generated outputs / large files
+file_outputs/
+newcoin_outputs/
+research_sources/
+model_routing/logs/
+model_routing/*.json
+*.log
+*.tmp
+*.cache
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Local runtime
+.DS_Store
+Thumbs.db
+*.bak
+*.bak*

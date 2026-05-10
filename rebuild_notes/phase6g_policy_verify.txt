@@ -1,0 +1,2 @@
+CONFIG_OK: /root/.hermes/model_routing/routing_policy.yaml
+FORMAT: YAML

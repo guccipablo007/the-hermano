@@ -1,0 +1,147 @@
+version: 1
+status: draft_not_active
+principles:
+- The Supervisor Agent understands natural language and decides routing.
+- Routing is based on task intent, capability, privacy risk, and complexity.
+- This is not a hardcoded phrase router.
+- Specialist workers handle execution.
+- The Verification Gate checks proof before success is claimed.
+- Private Gmail and YouTube analytics/account data must not be sent to NewCoin.
+routes:
+  basic:
+    provider: newcoin
+    model: qwen3-32b
+    role: Basic Research and Summary Worker
+    use_for:
+    - simple explanations
+    - simple summaries
+    - brainstorming
+    - non-sensitive basic research
+    - rewriting
+    - lightweight planning
+    must_not_handle:
+    - Gmail content
+    - YouTube analytics/account data
+    - OAuth tokens
+    - API keys
+    - private credentials
+    - destructive actions
+    verification_required: moderate
+  coder:
+    provider: newcoin
+    model: doubao-seed-2-0-code-preview-260215
+    role: Coding and Builder Worker
+    use_for:
+    - Python scripts
+    - HTML/CSS/JavaScript
+    - dashboards
+    - file builders
+    - local automation
+    - skill creation
+    - webapps
+    - Hermes helper tools
+    must_verify:
+    - file exists
+    - syntax check passes when applicable
+    - script runs when applicable
+    - output is readable
+    verification_required: high
+    fallback_reason: qwen3-coder-plus returned HTTP 401; selected first accessible
+      coder fallback.
+  complex_reasoning:
+    provider: newcoin
+    model: kimi-k2
+    role: Complex Architect Worker
+    use_for:
+    - business architecture
+    - project planning
+    - debugging difficult behavior
+    - agent workflow design
+    - multi-step strategic reasoning
+    - system design
+    verification_required: high
+  vision:
+    provider: newcoin
+    model: doubao-seed-1-6-vision-250815
+    role: Vision and Image Worker
+    use_for:
+    - screenshots
+    - image understanding
+    - UI analysis
+    - receipts
+    - thumbnails
+    - worksheet images
+    verification_required: moderate
+    status: active_text_smoke_passed
+  source_verified_research:
+    provider: newcoin
+    model: qwen3-32b
+    role: Source-Verified Research Worker
+    use_for:
+    - exact source research
+    - claims needing links
+    - documentation verification
+    - quote extraction
+    - source conflict analysis
+    required_skills:
+    - source-locked-research
+    required_tools:
+    - source_quote_extractor
+    - quote_audit
+    must_verify:
+    - raw sources saved locally
+    - exact quotes extracted with line numbers
+    - quote audit passed
+    - assumptions separated from verified facts
+    verification_required: strict
+  private_data:
+    provider: openrouter
+    model: deepseek/deepseek-chat
+    role: Private Data Worker
+    use_for:
+    - Gmail
+    - YouTube Data API
+    - YouTube Analytics API
+    - OAuth/account data
+    - private analytics reports
+    must_not_send_to_newcoin: true
+    confirmation_required_for:
+    - send email
+    - delete email
+    - archive email
+    - upload
+    - post
+    - publish
+    - expose credentials
+    verification_required: strict
+verification_gate:
+  required_for:
+  - file creation
+  - script creation
+  - install
+  - test
+  - fetch
+  - source research
+  - service change
+  - configuration edit
+  failure_response: NOT VERIFIED
+  rules:
+    file_creation:
+    - run creation command
+    - run ls -lah on path
+    - read or test file
+    script_creation:
+    - write script
+    - run syntax check
+    - run test input
+    - show raw output
+    research:
+    - save raw sources
+    - extract quotes with line numbers
+    - audit every quote
+    - separate verified facts from assumptions
+    config_change:
+    - backup file first
+    - validate syntax
+    - restart only required service
+    - check service status

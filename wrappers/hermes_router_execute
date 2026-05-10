@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec /root/.hermes/scripts/hermes_router_execute.py "$@"
