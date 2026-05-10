@@ -402,3 +402,18 @@ When creating PDF lessons:
 - keep grammar corrected through phrase normalization
 
 Do not test DOCX unless the phase or user asks for DOCX testing.
+
+## Timezone and Scheduling Truth
+
+Rules:
+- The user is in China.
+- Default timezone is Asia/Shanghai.
+- All natural-language dates and times default to China time.
+- Never assume U.S. Central time from ?CST.?
+- For reminders, always calculate and display:
+  1. current China time
+  2. target China time
+  3. next run China time
+  4. whether the reminder time is already past
+- Do not claim a reminder was created successfully unless the job exists and the next-run time is verified.
+- If cron is used, verify the cron timezone or use a script that calculates due times in Asia/Shanghai internally.
