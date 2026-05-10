@@ -6210,6 +6210,19 @@ class GatewayRunner:
 
         # Build the context prompt to inject
         context_prompt = build_session_context_prompt(context, redact_pii=_redact_pii)
+
+        # China-time context: inject for normal model-routed messages.
+        # Artifact pre-router returns before this point, so file-output routing is not disturbed.
+        try:
+            import sys as _hermes_tz_sys
+            if "/root/.hermes/scripts" not in _hermes_tz_sys.path:
+                _hermes_tz_sys.path.insert(0, "/root/.hermes/scripts")
+            from hermes_time_context import timezone_context_for_prompt as _hermes_tz_context
+            _tz_prompt = _hermes_tz_context()
+            if _tz_prompt and _tz_prompt not in context_prompt:
+                context_prompt = _tz_prompt + "\n\n" + context_prompt
+        except Exception as _tz_exc:
+            logger.warning("Failed to inject China timezone context: %s", _tz_exc, exc_info=True)
         
         # If the previous session expired and was auto-reset, prepend a notice
         # so the agent knows this is a fresh conversation (not an intentional /reset).
