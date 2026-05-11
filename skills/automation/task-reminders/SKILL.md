@@ -33,3 +33,15 @@ Use the `cronjob` tool to create reminders with:
 ## User Preferences
 
 Automate reminders efficiently without unnecessary confirmations or questions.
+
+## Deterministic Reminder Creation Rule
+
+For one-shot reminders such as `in 2 minutes`, `in 8 minutes`, `today at 6pm`, and `tomorrow at 7 AM`, Hermes must rely on deterministic cronjob tool parsing in Asia/Shanghai, not model-estimated absolute times.
+
+Success requires:
+- the job is written to cron storage
+- `next_run_at` exists
+- `next_run_at` is in the future
+- the tool response includes verification
+
+If verification fails, report `NOT VERIFIED`.
