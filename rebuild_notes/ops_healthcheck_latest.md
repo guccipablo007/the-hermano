@@ -1,5 +1,5 @@
 # Hermes Ops Healthcheck (quick)
-Generated: 2026-05-11T12:07:59+00:00
+Generated: 2026-05-11T12:16:34+00:00
 MODE=quick
 
 ## Gateway Active
@@ -26,7 +26,7 @@ PY_COMPILE_OK=/usr/local/lib/hermes-agent/cron/jobs.py
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/vda1        77G  7.4G   70G  10% /
                total        used        free      shared  buff/cache   available
-Mem:           1.8Gi       1.3Gi       127Mi       687Mi       1.2Gi       467Mi
+Mem:           1.8Gi       1.4Gi       121Mi       688Mi       1.2Gi       466Mi
 Swap:             0B          0B          0B
 
 ## Recent Gateway Fatal/Error Scan

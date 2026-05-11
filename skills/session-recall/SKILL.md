@@ -33,3 +33,7 @@ python3 /root/.hermes/scripts/hermes_session_recall.py status
 - safe files in `/root/hermano-backup`
 
 Do not search token folders, OAuth files, `.env`, provider secret files, raw private account data, or generated outputs.
+
+## Verification Gate
+
+Recall summaries must cite local evidence. If evidence is missing, say `NOT VERIFIED` instead of guessing.
