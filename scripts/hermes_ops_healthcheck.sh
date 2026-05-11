@@ -1,10 +1,34 @@
 #!/usr/bin/env bash
 set -u
 
-REPORT="/root/.hermes/rebuild_notes/ops_healthcheck_latest.md"
+MODE="quick"
+case "${1:-}" in
+  ""|--quick) MODE="quick" ;;
+  --deep) MODE="deep" ;;
+  --help|-h)
+    cat <<'EOF'
+Usage: hermes_ops_healthcheck [--quick|--deep|--help]
+
+--quick  Fast startup-safe checks. Default.
+--deep   Full diagnostics including reminder regression tests.
+EOF
+    exit 0
+    ;;
+  *)
+    echo "Usage: hermes_ops_healthcheck [--quick|--deep|--help]"
+    exit 2
+    ;;
+esac
+
+if [ "$MODE" = "deep" ]; then
+  REPORT="/root/.hermes/rebuild_notes/ops_healthcheck_deep_latest.md"
+else
+  REPORT="/root/.hermes/rebuild_notes/ops_healthcheck_latest.md"
+fi
 TMP="${REPORT}.tmp"
 mkdir -p "$(dirname "$REPORT")"
 FAIL=0
+WARN=0
 
 sanitize() {
   sed -E \
@@ -17,12 +41,7 @@ sanitize() {
 
 check_file() {
   local f="$1"
-  if [ -f "$f" ]; then
-    echo "FILE_OK=$f"
-  else
-    echo "FILE_MISSING=$f"
-    FAIL=1
-  fi
+  if [ -f "$f" ]; then echo "FILE_OK=$f"; else echo "FILE_MISSING=$f"; FAIL=1; fi
 }
 
 check_py() {
@@ -36,25 +55,44 @@ check_py() {
   fi
 }
 
+quick_files=(
+  /root/.hermes/model_routing/routing_policy.yaml
+  /usr/local/lib/hermes-agent/tools/cronjob_tools.py
+  /usr/local/lib/hermes-agent/cron/scheduler.py
+  /usr/local/lib/hermes-agent/cron/jobs.py
+  /root/.hermes/scripts/hermes_rich_output_execute.py
+  /root/.hermes/scripts/telegram_artifact_prerouter.py
+  /root/.hermes/scripts/hermes_media_verify.py
+)
+quick_py=(
+  /usr/local/lib/hermes-agent/tools/cronjob_tools.py
+  /usr/local/lib/hermes-agent/cron/scheduler.py
+  /usr/local/lib/hermes-agent/cron/jobs.py
+)
+deep_py=(
+  /root/.hermes/scripts/hermes_rich_output_execute.py
+  /root/.hermes/scripts/hermes_rich_batch_execute.py
+  /root/.hermes/scripts/telegram_artifact_prerouter.py
+  /root/.hermes/scripts/hermes_media_verify.py
+  /root/.hermes/scripts/hermes_visual_asset_router.py
+  /root/.hermes/scripts/hermes_lesson_phrase_normalizer.py
+)
+
 {
-  echo "# Hermes Ops Healthcheck"
+  echo "# Hermes Ops Healthcheck ($MODE)"
   echo "Generated: $(date -Is)"
+  echo "MODE=$MODE"
   echo ""
 
-  echo "## Gateway Service"
+  echo "## Gateway Active"
   ACTIVE="$(systemctl is-active hermes-gateway.service 2>/dev/null || true)"
   echo "GATEWAY_ACTIVE=$ACTIVE"
   if [ "$ACTIVE" != "active" ]; then FAIL=1; fi
-  systemctl status hermes-gateway.service --no-pager 2>&1 | sanitize || true
   echo ""
 
-  echo "## Git Backup"
+  echo "## Git Backup Presence"
   if [ -d /root/hermano-backup/.git ]; then
-    cd /root/hermano-backup
     echo "BACKUP_ROOT_EXISTS=YES"
-    echo "GIT_BRANCH=$(git branch --show-current 2>/dev/null || true)"
-    echo "GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || true)"
-    echo "GIT_REMOTE=$(git remote get-url origin 2>/dev/null || true)"
   else
     echo "BACKUP_ROOT_EXISTS=NO"
     FAIL=1
@@ -62,52 +100,11 @@ check_py() {
   echo ""
 
   echo "## Critical Files"
-  for f in \
-    /root/.hermes/model_routing/routing_policy.yaml \
-    /usr/local/lib/hermes-agent/tools/cronjob_tools.py \
-    /usr/local/lib/hermes-agent/cron/scheduler.py \
-    /usr/local/lib/hermes-agent/cron/jobs.py \
-    /root/.hermes/scripts/hermes_rich_output_execute.py \
-    /root/.hermes/scripts/hermes_rich_batch_execute.py \
-    /root/.hermes/scripts/telegram_artifact_prerouter.py \
-    /root/.hermes/scripts/hermes_media_verify.py \
-    /root/.hermes/scripts/hermes_visual_asset_router.py \
-    /root/.hermes/scripts/hermes_lesson_phrase_normalizer.py
-  do
-    check_file "$f"
-  done
+  for f in "${quick_files[@]}"; do check_file "$f"; done
   echo ""
 
-  echo "## Python Syntax"
-  for f in \
-    /usr/local/lib/hermes-agent/tools/cronjob_tools.py \
-    /usr/local/lib/hermes-agent/cron/scheduler.py \
-    /usr/local/lib/hermes-agent/cron/jobs.py \
-    /root/.hermes/scripts/hermes_rich_output_execute.py \
-    /root/.hermes/scripts/hermes_rich_batch_execute.py \
-    /root/.hermes/scripts/telegram_artifact_prerouter.py \
-    /root/.hermes/scripts/hermes_media_verify.py \
-    /root/.hermes/scripts/hermes_visual_asset_router.py \
-    /root/.hermes/scripts/hermes_lesson_phrase_normalizer.py
-  do
-    if [ -f "$f" ]; then check_py "$f"; fi
-  done
-  echo ""
-
-  echo "## Reminder Regression"
-  if [ -x /root/.hermes/scripts/hermes_reminder_create_test.py ]; then
-    /root/.hermes/scripts/hermes_reminder_create_test.py 2>&1 | sanitize || FAIL=1
-  else
-    echo "REMINDER_CREATE_TEST=SKIPPED_MISSING"
-    FAIL=1
-  fi
-  if [ -x /root/.hermes/scripts/hermes_reminder_delivery_test.py ]; then
-    /root/.hermes/scripts/hermes_reminder_delivery_test.py 2>&1 | sanitize || FAIL=1
-  else
-    echo "REMINDER_DELIVERY_TEST=SKIPPED_MISSING"
-    FAIL=1
-  fi
-  echo "REAL_TELEGRAM_SPAM_TEST=SKIPPED_BY_DESIGN"
+  echo "## Critical Python Syntax"
+  for f in "${quick_py[@]}"; do [ -f "$f" ] && check_py "$f"; done
   echo ""
 
   echo "## Disk And Memory"
@@ -115,17 +112,56 @@ check_py() {
   free -h 2>&1 | sanitize || true
   echo ""
 
-  echo "## Gateway Logs"
-  journalctl -u hermes-gateway.service -n 80 --no-pager 2>&1 | sanitize || true
+  echo "## Recent Gateway Fatal/Error Scan"
+  journalctl -u hermes-gateway.service -n 80 --no-pager 2>&1 | sanitize > /tmp/hermes_ops_recent_journal.txt || true
+  grep -Ei 'fatal|traceback|uncaught|segmentation fault|failed to start|panic' /tmp/hermes_ops_recent_journal.txt || true
+  if grep -Eiq 'fatal|uncaught|segmentation fault|failed to start|panic' /tmp/hermes_ops_recent_journal.txt; then
+    echo "GATEWAY_RECENT_CRITICAL_LOGS=FOUND"
+    FAIL=1
+  else
+    echo "GATEWAY_RECENT_CRITICAL_LOGS=NONE"
+  fi
   echo ""
 
-  echo "## Cron Status"
-  if command -v hermes >/dev/null 2>&1; then
-    echo "HERMES_COMMAND=FOUND"
-  else
-    echo "HERMES_COMMAND=NOT_FOUND"
-  fi
-  python3 - <<'PY' 2>&1 | sed -E 's/telegram:-?[0-9]+(:[0-9]+)?/telegram:<chat_id_masked>/g'
+  if [ "$MODE" = "deep" ]; then
+    echo "## Deep Python Syntax"
+    for f in "${deep_py[@]}"; do [ -f "$f" ] && check_py "$f"; done
+    echo ""
+
+    echo "## Reminder Regression"
+    if [ -x /root/.hermes/scripts/hermes_reminder_create_test.py ]; then
+      /root/.hermes/scripts/hermes_reminder_create_test.py 2>&1 | sanitize || FAIL=1
+    else
+      echo "REMINDER_CREATE_TEST=SKIPPED_MISSING"; FAIL=1
+    fi
+    if [ -x /root/.hermes/scripts/hermes_reminder_delivery_test.py ]; then
+      /root/.hermes/scripts/hermes_reminder_delivery_test.py 2>&1 | sanitize || FAIL=1
+    else
+      echo "REMINDER_DELIVERY_TEST=SKIPPED_MISSING"; FAIL=1
+    fi
+    echo "REAL_TELEGRAM_SPAM_TEST=SKIPPED_BY_DESIGN"
+    echo ""
+
+    echo "## Git Backup Details"
+    if [ -d /root/hermano-backup/.git ]; then
+      cd /root/hermano-backup
+      echo "GIT_BRANCH=$(git branch --show-current 2>/dev/null || true)"
+      echo "GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || true)"
+      echo "GIT_REMOTE=$(git remote get-url origin 2>/dev/null || true)"
+    fi
+    echo ""
+
+    echo "## Gateway Status"
+    systemctl status hermes-gateway.service --no-pager 2>&1 | sanitize || true
+    echo ""
+
+    echo "## Gateway Logs"
+    journalctl -u hermes-gateway.service -n 120 --no-pager 2>&1 | sanitize || true
+    echo ""
+
+    echo "## Cron Status"
+    if command -v hermes >/dev/null 2>&1; then echo "HERMES_COMMAND=FOUND"; else echo "HERMES_COMMAND=NOT_FOUND"; fi
+    python3 - <<'PY' 2>&1 | sed -E 's/telegram:-?[0-9]+(:[0-9]+)?/telegram:<chat_id_masked>/g'
 import json, sys
 sys.path.insert(0, '/usr/local/lib/hermes-agent')
 try:
@@ -136,33 +172,35 @@ try:
         deliver = str(j.get('deliver') or '')
         if deliver.startswith('telegram:'):
             deliver = 'telegram:<chat_id_masked>'
-        print(json.dumps({
-            'id': j.get('id'),
-            'name': j.get('name'),
-            'state': j.get('state'),
-            'enabled': j.get('enabled'),
-            'next_run_at': j.get('next_run_at'),
-            'last_status': j.get('last_status'),
-            'deliver': deliver,
-        }, ensure_ascii=False))
+        print(json.dumps({'id': j.get('id'), 'name': j.get('name'), 'state': j.get('state'), 'enabled': j.get('enabled'), 'next_run_at': j.get('next_run_at'), 'last_status': j.get('last_status'), 'deliver': deliver}, ensure_ascii=False))
 except Exception as exc:
     print('CRON_LIST_FAILED=' + type(exc).__name__ + ':' + str(exc))
 PY
-  echo ""
+    echo ""
+
+    echo "## Shellcheck"
+    if command -v shellcheck >/dev/null 2>&1; then
+      shellcheck /root/.hermes/scripts/hermes_ops_healthcheck.sh && echo "SHELLCHECK=PASSED" || { echo "SHELLCHECK=FAILED"; FAIL=1; }
+    else
+      echo "SHELLCHECK=SKIPPED_NOT_INSTALLED"
+    fi
+    echo ""
+  fi
 
   if [ "$FAIL" -eq 0 ]; then
-    echo "OPS_HEALTHCHECK=PASSED"
+    if [ "$MODE" = "deep" ]; then echo "OPS_HEALTHCHECK_DEEP=PASSED"; else echo "OPS_HEALTHCHECK_QUICK=PASSED"; fi
   else
     echo "NOT VERIFIED"
   fi
 } | tee "$TMP" >/dev/null
 
 mv "$TMP" "$REPORT"
-if grep -q '^OPS_HEALTHCHECK=PASSED$' "$REPORT"; then
-  echo "OPS_HEALTHCHECK=PASSED"
-  exit 0
+if [ "$MODE" = "deep" ]; then
+  if grep -q '^OPS_HEALTHCHECK_DEEP=PASSED$' "$REPORT"; then echo "OPS_HEALTHCHECK_DEEP=PASSED"; exit 0; fi
+else
+  if grep -q '^OPS_HEALTHCHECK_QUICK=PASSED$' "$REPORT"; then echo "OPS_HEALTHCHECK_QUICK=PASSED"; exit 0; fi
 fi
 
 echo "NOT VERIFIED"
-grep -E 'FAILED|MISSING|NOT VERIFIED|GATEWAY_ACTIVE=' "$REPORT" | tail -40
+grep -E 'FAILED|MISSING|NOT VERIFIED|GATEWAY_ACTIVE=|CRITICAL' "$REPORT" | tail -40
 exit 1
