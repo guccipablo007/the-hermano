@@ -39,14 +39,26 @@ def main() -> int:
         mod._hermes_now = lambda: fixed
 
     try:
+        set_now("2026-05-12T23:00:00+08:00")
+        expect_equal("UPLOAD_SUNDAY_6H", mod.compute_next_run(mod.parse_schedule("every Sunday at 12:00")), "2026-05-17T12:00:00+08:00")
+        expect_equal("UPLOAD_SUNDAY_3H", mod.compute_next_run(mod.parse_schedule("every Sunday at 15:00")), "2026-05-17T15:00:00+08:00")
+        expect_equal("UPLOAD_SUNDAY_1H", mod.compute_next_run(mod.parse_schedule("every Sunday at 17:00")), "2026-05-17T17:00:00+08:00")
+
+        set_now("2026-05-12T08:46:00+08:00")
+        tuesday = mod.parse_schedule("every Tuesday at 15:30")
+        expect_equal("SAME_DAY_FUTURE_GENERIC", mod.compute_next_run(tuesday), "2026-05-12T15:30:00+08:00")
+
+        set_now("2026-05-12T16:00:00+08:00")
+        expect_equal("SAME_DAY_PAST_GENERIC", mod.compute_next_run(tuesday), "2026-05-19T15:30:00+08:00")
+
         schedule = mod.parse_schedule("every Tuesday, Wednesday, Thursday at 15:30")
         schedule["end_date"] = "2026-07-31"
 
         set_now("2026-05-12T08:46:00+08:00")
-        expect_equal("SAME_DAY_FUTURE", mod.compute_next_run(schedule), "2026-05-12T15:30:00+08:00")
+        expect_equal("MULTIDAY_SAME_DAY_FUTURE", mod.compute_next_run(schedule), "2026-05-12T15:30:00+08:00")
 
         set_now("2026-05-12T16:00:00+08:00")
-        expect_equal("SAME_DAY_PAST", mod.compute_next_run(schedule), "2026-05-13T15:30:00+08:00")
+        expect_equal("MULTIDAY_SAME_DAY_PAST", mod.compute_next_run(schedule), "2026-05-13T15:30:00+08:00")
 
         set_now("2026-05-13T16:00:00+08:00")
         expect_equal("MULTI_DAY_WEEKLY", mod.compute_next_run(schedule), "2026-05-14T15:30:00+08:00")
@@ -54,12 +66,8 @@ def main() -> int:
         set_now("2026-07-31T10:00:00+08:00")
         expect_equal("END_DATE_NO_FUTURE", mod.compute_next_run(schedule), None)
 
-        set_now("2026-05-12T17:00:00+08:00")
-        sunday = mod.parse_schedule("every Sunday at 18:00")
-        expect_equal("SUNDAY_ONLY_WEEKLY", mod.compute_next_run(sunday), "2026-05-17T18:00:00+08:00")
-
         set_now("2026-05-12T08:46:00+08:00")
-        once = mod.parse_schedule("2026-05-14 15:30")
+        once = mod.parse_schedule("once at 2026-05-14 15:30")
         expect_equal("ABSOLUTE_ONCE", mod.compute_next_run(once), "2026-05-14T15:30:00+08:00")
 
         try:

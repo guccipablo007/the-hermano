@@ -65,3 +65,22 @@ If verification fails, report `NOT VERIFIED`.
 - Reminder lookup is read-only: do not create, edit, pause, resume, delete, or run jobs during lookup.
 - For multiple matches, list matching jobs and identify the earliest `next_run_at` from active enabled jobs.
 - Mask Telegram chat IDs and never expose raw JSON/tool payloads in normal Telegram replies.
+
+## General Natural-Language Reminder Rules - Phase 7G-E
+
+Reminder behavior must be storage-backed and deterministic, not based on memory guesses.
+
+Rules:
+- Relative one-shot reminders use deterministic timedelta parsing.
+- Absolute one-shot reminders such as `once at YYYY-MM-DD HH:MM` use deterministic date/time parsing in Asia/Shanghai.
+- Weekly recurring reminders use deterministic weekday/time parsing.
+- Same-day future occurrences are included.
+- Same-day past occurrences move to the next valid weekday.
+- End dates are upper bounds and must not be exceeded.
+- Multi-reminder offset requests create one verified job per offset unless a multi-time schedule format is explicitly verified.
+- List and lookup requests always read cron storage.
+- Friendly Telegram output is the default for lookup/list responses.
+- Raw technical output is only for explicit debug/technical requests.
+- If parsing, storage lookup, next_run_at verification, or delivery target verification fails, answer NOT VERIFIED.
+- Do not claim created, scheduled, updated, or delivered without verified storage and delivery evidence.
+- Do not expose raw tool JSON, full chat IDs, tokens, or API keys.
