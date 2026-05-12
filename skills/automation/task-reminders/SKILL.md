@@ -56,3 +56,12 @@ If verification fails, report `NOT VERIFIED`.
 - Do not claim a reminder was created unless the job exists, `next_run_at` is correct, and the delivery target is verified.
 - Stop after the first verified success. Do not create fallback reminders after a verified cron job was created.
 - Do not expose raw tool JSON, call IDs, debug markers, full Telegram chat IDs, tracebacks, tokens, or API keys in normal Telegram replies.
+
+## Phase 7G-C Reminder Lookup Accuracy Rule
+
+- For reminder lookup questions, always query cron storage through `/root/.hermes/scripts/hermes_reminder_lookup.py`.
+- Never answer next-reminder or schedule lookup questions from memory, session summaries, or inferred user intent.
+- If cron storage evidence is missing or inaccessible, say `NOT VERIFIED`.
+- Reminder lookup is read-only: do not create, edit, pause, resume, delete, or run jobs during lookup.
+- For multiple matches, list matching jobs and identify the earliest `next_run_at` from active enabled jobs.
+- Mask Telegram chat IDs and never expose raw JSON/tool payloads in normal Telegram replies.
