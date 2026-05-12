@@ -1,5 +1,5 @@
 # Hermes Ops Healthcheck (deep)
-Generated: 2026-05-11T12:31:46+00:00
+Generated: 2026-05-12T11:31:39+00:00
 MODE=deep
 
 ## Gateway Active
@@ -26,10 +26,11 @@ PY_COMPILE_OK=/usr/local/lib/hermes-agent/cron/jobs.py
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/vda1        77G  7.4G   70G  10% /
                total        used        free      shared  buff/cache   available
-Mem:           1.8Gi       1.4Gi        98Mi       688Mi       1.2Gi       445Mi
+Mem:           1.8Gi       1.4Gi       104Mi       688Mi       1.2Gi       422Mi
 Swap:             0B          0B          0B
 
 ## Recent Gateway Fatal/Error Scan
+May 11 12:33:22 ubuntu python[92807]:   root       96006  0.0  0.1   7944  3756 ?        Ss   12:33   0:00 bash -c  set -e echo "=== Restart gateway ===" systemctl restart hermes-gateway.service sleep 4 ACTIVE=$(systemctl is-active hermes-gateway.service) echo "GATEWAY_ACTIVE=$ACTIVE" echo "=== Post-restart quick healthcheck ===" set +e hermes_ops_healthcheck --quick >/tmp/phase7f_post_restart_quick.txt 2>&1 QRC=$? set -e echo "POST_RESTART_QUICK_RC=$QRC" grep -E "OPS_HEALTHCHECK_QUICK=PASSED|NOT VERIFIED" /tmp/phase7f_post_restart_quick.txt | tail -5 || true echo "=== Startup healthcheck status ===" if [ -f /root/.hermes/rebuild_notes/startup_healthcheck_last_status.md ]; then   tail -20 /root/.hermes/rebuild_notes/startup_healthcheck_last_status.md fi echo "=== Journal recent error scan ===" journalctl -u hermes-gateway.service -n 80 --no-pager | grep -Ei "btw|traceback|syntaxerror|failed|error" | tail -40 || true echo "=== Latest commit ===" cd /root/hermano-backup && git rev-parse HEAD
 GATEWAY_RECENT_CRITICAL_LOGS=NONE
 
 ## Deep Python Syntax
@@ -42,14 +43,14 @@ PY_COMPILE_OK=/root/.hermes/scripts/hermes_lesson_phrase_normalizer.py
 
 ## Reminder Regression
 REMINDER_CREATE_TEST=PASSED
-JOB_ID=f147968b4bb7
-EXPECTED=2026-05-11T20:33:46.997429+08:00
-ACTUAL=2026-05-11T20:33:46.998822+08:00
-DELTA_SECONDS=0.001393
+JOB_ID=a91f118f8b62
+EXPECTED=2026-05-12T19:33:39.656254+08:00
+ACTUAL=2026-05-12T19:33:39.657536+08:00
+DELTA_SECONDS=0.001282
 TIMEZONE=Asia/Shanghai
-JOB_ID=bd962851758f
+JOB_ID=3db17fd2bdb4
 WAITING_FOR_DUE=70_SECONDS
-SCHEDULER_TICK_RAN=1
+SCHEDULER_TICK_RAN=2
 JOB_STATE=completed
 JOB_LAST_STATUS=ok
 JOB_LAST_ERROR=None
@@ -60,7 +61,7 @@ REAL_TELEGRAM_SPAM_TEST=SKIPPED_BY_DESIGN
 
 ## Git Backup Details
 GIT_BRANCH=main
-GIT_COMMIT=7cfca6fc9ef55444c6a0697741cdaaf80fad3125
+GIT_COMMIT=636489521405689ace95a827cb9d447ad0405c2e
 GIT_REMOTE=git@github.com-hermes:guccipablo007/the-hermano.git
 
 ## Gateway Status
@@ -68,37 +69,20 @@ GIT_REMOTE=git@github.com-hermes:guccipablo007/the-hermano.git
      Loaded: loaded (/etc/systemd/system/hermes-gateway.service; enabled; preset: enabled)
     Drop-In: /etc/systemd/system/hermes-gateway.service.d
              └─30-ops-healthcheck.conf
-     Active: active (running) since Mon 2026-05-11 11:49:16 UTC; 43min ago
- Invocation: f93e6c9267ad41679504f63676dbbcda
-    Process: 92808 ExecStartPost=/bin/bash -lc systemd-run --unit=hermes-ops-startup-healthcheck --property=Type=oneshot --on-active=20s /usr/local/bin/hermes_ops_startup_healthcheck >/dev/null 2>&1 || true (code=exited, status=0/SUCCESS)
-   Main PID: 92807 (python)
-      Tasks: 5 (limit: 1141)
-     Memory: 147.8M (peak: 179.3M)
-        CPU: 7.000s
+     Active: active (running) since Mon 2026-05-11 12:33:23 UTC; 22h ago
+ Invocation: 575ad2d03dcb40acaea99c56bebc737a
+    Process: 96012 ExecStartPost=/bin/bash -lc systemd-run --unit=hermes-ops-startup-healthcheck --property=Type=oneshot --on-active=20s /usr/local/bin/hermes_ops_startup_healthcheck >/dev/null 2>&1 || true (code=exited, status=0/SUCCESS)
+   Main PID: 96011 (python)
+      Tasks: 6 (limit: 1141)
+     Memory: 202.7M (peak: 230.7M)
+        CPU: 1min 38.741s
      CGroup: /system.slice/hermes-gateway.service
-             └─92807 /usr/local/lib/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --replace
+             └─96011 /usr/local/lib/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --replace
 
-May 11 11:49:16 ubuntu systemd[1]: Starting hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration...
-May 11 11:49:16 ubuntu systemd[1]: Started hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
+May 11 12:33:23 ubuntu systemd[1]: Starting hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration...
+May 11 12:33:23 ubuntu systemd[1]: Started hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
 
 ## Gateway Logs
-May 11 09:35:30 ubuntu systemd[1]: hermes-gateway.service: Main process exited, code=exited, status=1/FAILURE
-May 11 09:35:30 ubuntu systemd[1]: hermes-gateway.service: Failed with result 'exit-code'.
-May 11 09:35:30 ubuntu systemd[1]: Stopped hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
-May 11 09:35:30 ubuntu systemd[1]: hermes-gateway.service: Consumed 1min 39.798s CPU time over 23h 47min 35.985s wall clock time, 239M memory peak.
-May 11 09:35:30 ubuntu systemd[1]: Started hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
-May 11 09:55:30 ubuntu systemd[1]: Stopping hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration...
-May 11 09:55:30 ubuntu python[82920]: WARNING gateway.run: Shutdown diagnostic — other hermes processes running:
-May 11 09:55:30 ubuntu python[82920]:   root       24733  0.0  1.4 146236 27940 ?        Ss   May08   0:33 /usr/bin/python3 /root/.hermes/scripts/hermes_preview_server.py
-May 11 09:55:30 ubuntu python[82920]:   root       84038  0.0  0.4  20204  8004 ?        S    09:55   0:00 systemctl restart hermes-gateway.service
-May 11 09:55:31 ubuntu python[82920]: ┌─────────────────────────────────────────────────────────┐
-May 11 09:55:31 ubuntu python[82920]: │           ⚕ Hermes Gateway Starting...                 │
-May 11 09:55:31 ubuntu python[82920]: ├─────────────────────────────────────────────────────────┤
-May 11 09:55:31 ubuntu python[82920]: │  Messaging platforms + cron scheduler                    │
-May 11 09:55:31 ubuntu python[82920]: │  Press Ctrl+C to stop                                   │
-May 11 09:55:31 ubuntu python[82920]: └─────────────────────────────────────────────────────────┘
-May 11 09:55:32 ubuntu systemd[1]: hermes-gateway.service: Main process exited, code=exited, status=1/FAILURE
-May 11 09:55:32 ubuntu systemd[1]: hermes-gateway.service: Failed with result 'exit-code'.
 May 11 09:55:32 ubuntu systemd[1]: Stopped hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
 May 11 09:55:32 ubuntu systemd[1]: hermes-gateway.service: Consumed 5.831s CPU time over 20min 1.881s wall clock time, 206.6M memory peak.
 May 11 09:55:32 ubuntu systemd[1]: Started hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
@@ -202,22 +186,39 @@ May 11 11:49:16 ubuntu systemd[1]: Stopped hermes-gateway.service - Hermes Agent
 May 11 11:49:16 ubuntu systemd[1]: hermes-gateway.service: Consumed 5.109s CPU time over 14min 820ms wall clock time, 161.8M memory peak.
 May 11 11:49:16 ubuntu systemd[1]: Starting hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration...
 May 11 11:49:16 ubuntu systemd[1]: Started hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
+May 11 12:33:22 ubuntu systemd[1]: Stopping hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration...
+May 11 12:33:22 ubuntu python[92807]: WARNING gateway.run: Shutdown diagnostic — other hermes processes running:
+May 11 12:33:22 ubuntu python[92807]:   root       24733  0.0  1.4 146236 27940 ?        Ss   May08   0:34 /usr/bin/python3 /root/.hermes/scripts/hermes_preview_server.py
+May 11 12:33:22 ubuntu python[92807]:   root       96006  0.0  0.1   7944  3756 ?        Ss   12:33   0:00 bash -c  set -e echo "=== Restart gateway ===" systemctl restart hermes-gateway.service sleep 4 ACTIVE=$(systemctl is-active hermes-gateway.service) echo "GATEWAY_ACTIVE=$ACTIVE" echo "=== Post-restart quick healthcheck ===" set +e hermes_ops_healthcheck --quick >/tmp/phase7f_post_restart_quick.txt 2>&1 QRC=$? set -e echo "POST_RESTART_QUICK_RC=$QRC" grep -E "OPS_HEALTHCHECK_QUICK=PASSED|NOT VERIFIED" /tmp/phase7f_post_restart_quick.txt | tail -5 || true echo "=== Startup healthcheck status ===" if [ -f /root/.hermes/rebuild_notes/startup_healthcheck_last_status.md ]; then   tail -20 /root/.hermes/rebuild_notes/startup_healthcheck_last_status.md fi echo "=== Journal recent error scan ===" journalctl -u hermes-gateway.service -n 80 --no-pager | grep -Ei "btw|traceback|syntaxerror|failed|error" | tail -40 || true echo "=== Latest commit ===" cd /root/hermano-backup && git rev-parse HEAD
+May 11 12:33:22 ubuntu python[92807]:   root       96007  0.0  0.4  20204  7920 ?        S    12:33   0:00 systemctl restart hermes-gateway.service
+May 11 12:33:23 ubuntu python[92807]: ┌─────────────────────────────────────────────────────────┐
+May 11 12:33:23 ubuntu python[92807]: │           ⚕ Hermes Gateway Starting...                 │
+May 11 12:33:23 ubuntu python[92807]: ├─────────────────────────────────────────────────────────┤
+May 11 12:33:23 ubuntu python[92807]: │  Messaging platforms + cron scheduler                    │
+May 11 12:33:23 ubuntu python[92807]: │  Press Ctrl+C to stop                                   │
+May 11 12:33:23 ubuntu python[92807]: └─────────────────────────────────────────────────────────┘
+May 11 12:33:23 ubuntu systemd[1]: hermes-gateway.service: Main process exited, code=exited, status=1/FAILURE
+May 11 12:33:23 ubuntu systemd[1]: hermes-gateway.service: Failed with result 'exit-code'.
+May 11 12:33:23 ubuntu systemd[1]: Stopped hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
+May 11 12:33:23 ubuntu systemd[1]: hermes-gateway.service: Consumed 7.523s CPU time over 44min 6.834s wall clock time, 179.3M memory peak.
+May 11 12:33:23 ubuntu systemd[1]: Starting hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration...
+May 11 12:33:23 ubuntu systemd[1]: Started hermes-gateway.service - Hermes Agent Gateway - Messaging Platform Integration.
 
 ## Cron Status
 HERMES_COMMAND=FOUND
-CRON_JOB_COUNT=59
-{"id": "5214518c0c03", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "3bf0c988a11f", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "ac3e268bfa57", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "767237b4f688", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "ff8795e9f7bb", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
+CRON_JOB_COUNT=64
 {"id": "3071ec85c97c", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "b464b689c49b", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "ad7732a0a1a2", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "803532c11808", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "1305aeade7ca", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "f147968b4bb7", "name": "phase7ca_reminder_create_test", "state": "scheduled", "enabled": true, "next_run_at": "2026-05-11T20:33:46.998822+08:00", "last_status": null, "deliver": "local"}
+{"id": "f147968b4bb7", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "bd962851758f", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
+{"id": "09d06be57876", "name": "Reminder: Mickey's class starts in 1 hour", "state": "scheduled", "enabled": true, "next_run_at": "2026-05-13T15:30:00+08:00", "last_status": null, "deliver": "telegram:<chat_id_masked>"}
+{"id": "8deb853d8c42", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
+{"id": "7860764fee02", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
+{"id": "a91f118f8b62", "name": "phase7ca_reminder_create_test", "state": "scheduled", "enabled": true, "next_run_at": "2026-05-12T19:33:39.657536+08:00", "last_status": null, "deliver": "local"}
+{"id": "3db17fd2bdb4", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 
 ## Shellcheck
 SHELLCHECK=SKIPPED_NOT_INSTALLED

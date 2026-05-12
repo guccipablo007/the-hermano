@@ -45,3 +45,14 @@ Success requires:
 - the tool response includes verification
 
 If verification fails, report `NOT VERIFIED`.
+
+## Phase 7G Recurring Reminder Reliability Rule
+
+- For relative one-shot reminders, use deterministic timedelta parsing in China time.
+- For recurring reminders, use deterministic recurrence parsing; do not rely on model-estimated calendar math.
+- For schedules like `every Tuesday, Wednesday, Thursday at 15:30`, include today when today's weekday matches and the scheduled time is still in the future.
+- Respect `end_date` as an upper bound. Do not describe end-dated recurring jobs as forever schedules.
+- Absolute schedules like `once at 2026-05-14 15:30` must parse to that exact Asia/Shanghai wall time, never to a current-time fallback.
+- Do not claim a reminder was created unless the job exists, `next_run_at` is correct, and the delivery target is verified.
+- Stop after the first verified success. Do not create fallback reminders after a verified cron job was created.
+- Do not expose raw tool JSON, call IDs, debug markers, full Telegram chat IDs, tracebacks, tokens, or API keys in normal Telegram replies.
