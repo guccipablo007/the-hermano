@@ -15,6 +15,7 @@ SECRET_PATTERNS = [
     (re.compile(r"Bearer\s+[A-Za-z0-9._-]+", re.I), "Bearer <REDACTED>"),
     (re.compile(r"(telegram:)-?\d+"), r"\1<chat_id_masked>"),
 ]
+WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 def mask(text: object) -> str:
@@ -61,6 +62,10 @@ def delivery_text(job: dict) -> str:
     return mask(deliver)
 
 
+def delivery_verified(job: dict) -> bool:
+    return delivery_text(job).startswith("telegram:") and "NOT_VERIFIED" not in delivery_text(job)
+
+
 def parse_dt(value: object):
     if not value:
         return None
@@ -99,7 +104,6 @@ def query_tokens(query: str) -> list[str]:
     return result or [t for t in tokens if t]
 
 
-
 def token_match(job: dict, query: str) -> bool:
     tokens = query_tokens(query)
     if not tokens:
@@ -108,6 +112,7 @@ def token_match(job: dict, query: str) -> bool:
     if len(tokens) >= 2:
         return all(token in hay for token in tokens)
     return any(token in hay for token in tokens)
+
 
 def score_job(job: dict, query: str) -> int:
     hay = searchable_text(job)
@@ -159,7 +164,7 @@ def job_summary(job: dict) -> list[str]:
     ]
 
 
-def render_matches(matches: list[dict], *, mode: str, query: str = "") -> str:
+def render_raw(matches: list[dict], *, mode: str, query: str = "") -> str:
     if not matches:
         return "NOT VERIFIED\nREASON=NO_MATCHING_ACTIVE_REMINDER_EVIDENCE"
     lines = ["VERIFIED"]
@@ -184,46 +189,145 @@ def render_matches(matches: list[dict], *, mode: str, query: str = "") -> str:
     return "\n".join(lines)
 
 
-def list_mode() -> str:
+def friendly_dt(dt: datetime | None) -> str:
+    if not dt:
+        return "NOT VERIFIED"
+    hour = dt.strftime("%I").lstrip("0") or "0"
+    day = dt.strftime("%d").lstrip("0") or "0"
+    return f"{dt.strftime('%A')}, {dt.strftime('%B')} {day}, {dt.strftime('%Y')} at {hour}:{dt.strftime('%M')} {dt.strftime('%p')} China time"
+
+
+def friendly_time(hour: int, minute: int) -> str:
+    suffix = "AM" if hour < 12 else "PM"
+    h = hour % 12
+    if h == 0:
+        h = 12
+    return f"{h}:{minute:02d} {suffix}"
+
+
+def join_days(days: list[str]) -> str:
+    if len(days) <= 1:
+        return days[0] if days else ""
+    if len(days) == 2:
+        return f"{days[0]} and {days[1]}"
+    return ", ".join(days[:-1]) + f", and {days[-1]}"
+
+
+def friendly_schedule(job: dict) -> str:
+    schedule = job.get("schedule") or {}
+    if schedule.get("kind") == "weekly":
+        days = [WEEKDAY_NAMES[int(d)] for d in schedule.get("weekdays", []) if 0 <= int(d) <= 6]
+        hour, minute = [int(x) for x in str(schedule.get("time", "00:00")).split(":", 1)]
+        return f"Every {join_days(days)} at {friendly_time(hour, minute)}."
+    text = schedule_text(job)
+    match = re.match(r"every\s+(.+?)\s+at\s+(\d{1,2}):(\d{2})", text, flags=re.I)
+    if match:
+        days = [d.strip().capitalize() for d in re.split(r",\s*", match.group(1)) if d.strip()]
+        return f"Every {join_days(days)} at {friendly_time(int(match.group(2)), int(match.group(3)))}."
+    return mask(text)
+
+
+def friendly_label(query: str, job: dict | None = None) -> str:
+    q = (query or "").strip().lower()
+    if "mickey" in q or (job and "mickey" in str(job.get("name", "")).lower()):
+        return "Mickey class reminder"
+    if "sunday" in q and "upload" in q:
+        return "Sunday upload reminder"
+    if "upload" in q:
+        return "upload reminder"
+    cleaned = re.sub(r"\b(when|is|my|next|the|a|an|reminder)\b", "", q).strip()
+    return (cleaned + " reminder").strip().capitalize() if cleaned else "reminder"
+
+
+def friendly_job_line(job: dict, query: str) -> str:
+    label = friendly_label(query, job)
+    return f"- {label}: {friendly_dt(parse_dt(job.get('next_run_at')))}; {friendly_schedule(job)}"
+
+
+def render_friendly(matches: list[dict], *, mode: str, query: str = "") -> str:
+    if not matches:
+        return "Your Majesty, I could not verify a matching reminder from storage.\n\nNOT VERIFIED"
+    active_matches = [j for j in matches if active(j) and parse_dt(j.get("next_run_at"))]
+    if mode == "next" and not active_matches:
+        return "Your Majesty, I could not verify a matching active reminder with a next run time from storage.\n\nNOT VERIFIED"
+    if mode == "next":
+        earliest = sort_jobs(active_matches)[0]
+        label = friendly_label(query, earliest)
+        lines = [
+            f"Your Majesty, your next {label} is {friendly_dt(parse_dt(earliest.get('next_run_at')))}.",
+            "",
+            f"Schedule: {friendly_schedule(earliest)}",
+            "Delivery: Telegram DM verified." if delivery_verified(earliest) else "Delivery: NOT VERIFIED.",
+        ]
+        extras = [j for j in active_matches if j.get("id") != earliest.get("id")]
+        if extras:
+            lines.append("")
+            lines.append("I found multiple matching reminders. Earliest is shown above; other matches:")
+            for job in sort_jobs(extras)[:4]:
+                lines.append(friendly_job_line(job, query))
+        return "\n".join(lines)
+    lines = ["Your Majesty, I found these matching reminders from storage:"]
+    for job in sort_jobs(matches)[:10]:
+        lines.append(friendly_job_line(job, query))
+    return "\n".join(lines)
+
+
+def list_mode(fmt: str) -> str:
     jobs = sort_jobs([j for j in load_jobs() if active(j)])
+    if fmt == "friendly":
+        return render_friendly(jobs, mode="list")
     if not jobs:
         return "NOT VERIFIED\nREASON=NO_ACTIVE_REMINDERS_FOUND"
-    return render_matches(jobs, mode="list")
+    return render_raw(jobs, mode="list")
 
 
-def search_mode(query: str) -> str:
-    return render_matches(find_jobs(query), mode="search", query=query)
+def search_mode(query: str, fmt: str) -> str:
+    matches = find_jobs(query)
+    return render_friendly(matches, mode="search", query=query) if fmt == "friendly" else render_raw(matches, mode="search", query=query)
 
 
-def next_mode(query: str) -> str:
-    return render_matches(find_jobs(query), mode="next", query=query)
+def next_mode(query: str, fmt: str) -> str:
+    matches = find_jobs(query)
+    return render_friendly(matches, mode="next", query=query) if fmt == "friendly" else render_raw(matches, mode="next", query=query)
 
 
-def status_mode(job_id: str) -> str:
+def status_mode(job_id: str, fmt: str) -> str:
     for job in load_jobs():
         if str(job.get("id")) == str(job_id):
+            if fmt == "friendly":
+                return "\n".join([
+                    f"Your Majesty, I verified this reminder from storage: {mask(job.get('name'))}.",
+                    f"Schedule: {friendly_schedule(job)}",
+                    f"Next reminder: {friendly_dt(parse_dt(job.get('next_run_at')))}.",
+                    "Delivery: Telegram DM verified." if delivery_verified(job) else "Delivery: NOT VERIFIED.",
+                ])
             return "VERIFIED\n" + "\n".join(job_summary(job))
-    return "NOT VERIFIED\nREASON=JOB_NOT_FOUND"
+    return "Your Majesty, I could not verify that reminder from storage.\n\nNOT VERIFIED" if fmt == "friendly" else "NOT VERIFIED\nREASON=JOB_NOT_FOUND"
+
+
+def add_format_arg(parser):
+    parser.add_argument("--format", choices=["raw", "friendly"], default="raw")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Read-only Hermes reminder lookup from cron storage.")
     sub = parser.add_subparsers(dest="mode", required=True)
-    sub.add_parser("list")
-    p_search = sub.add_parser("search"); p_search.add_argument("query")
-    p_next = sub.add_parser("next"); p_next.add_argument("query")
-    p_status = sub.add_parser("status"); p_status.add_argument("job_id")
+    p_list = sub.add_parser("list"); add_format_arg(p_list)
+    p_search = sub.add_parser("search"); p_search.add_argument("query"); add_format_arg(p_search)
+    p_next = sub.add_parser("next"); p_next.add_argument("query"); add_format_arg(p_next)
+    p_status = sub.add_parser("status"); p_status.add_argument("job_id"); add_format_arg(p_status)
     args = parser.parse_args()
+    fmt = getattr(args, "format", "raw")
     try:
-        if args.mode == "list": out = list_mode()
-        elif args.mode == "search": out = search_mode(args.query)
-        elif args.mode == "next": out = next_mode(args.query)
-        elif args.mode == "status": out = status_mode(args.job_id)
+        if args.mode == "list": out = list_mode(fmt)
+        elif args.mode == "search": out = search_mode(args.query, fmt)
+        elif args.mode == "next": out = next_mode(args.query, fmt)
+        elif args.mode == "status": out = status_mode(args.job_id, fmt)
         else: out = "NOT VERIFIED\nREASON=UNKNOWN_MODE"
     except Exception as exc:
         out = f"NOT VERIFIED\nREASON=LOOKUP_EXCEPTION:{type(exc).__name__}:{exc}"
     print(mask(out))
-    return 0 if out.startswith("VERIFIED") else 2
+    return 0 if (out.startswith("VERIFIED") or not "NOT VERIFIED" in out) else 2
 
 if __name__ == "__main__":
     raise SystemExit(main())
