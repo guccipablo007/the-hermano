@@ -84,3 +84,17 @@ Rules:
 - If parsing, storage lookup, next_run_at verification, or delivery target verification fails, answer NOT VERIFIED.
 - Do not claim created, scheduled, updated, or delivered without verified storage and delivery evidence.
 - Do not expose raw tool JSON, full chat IDs, tokens, or API keys.
+
+## Reminder Update Verification Rule - Phase 7G-F
+
+Reminder updates must be deterministic and storage-backed.
+
+Rules:
+- Do not hardcode facts for any named reminder.
+- After any reminder update, reload the job from cron storage before replying.
+- Recompute and verify `next_run_at` from the stored schedule.
+- For recurring updates, use generic recurrence logic; include same-day future occurrences and skip same-day past occurrences.
+- Friendly weekday text must be derived only from the actual `next_run_at` datetime object.
+- If storage reload, next-run verification, or formatter consistency fails, say NOT VERIFIED.
+- Do not expose raw cronjob calls, tool JSON, call IDs, full chat IDs, tokens, or API keys in Telegram replies.
+- Do not claim updated unless storage confirms the update and the verified next run is future in Asia/Shanghai.
