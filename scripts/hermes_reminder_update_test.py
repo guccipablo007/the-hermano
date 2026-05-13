@@ -162,6 +162,7 @@ def main() -> int:
     original_now = jobs._hermes_now
     original_tools_now = tools._now_china
     try:
+        assert_update_case(jobs, tools, case="USER_REPORTED_TUE_THU_FRI_UPDATE", now_iso="2026-05-13T00:05:00+08:00", initial_schedule="every Monday at 09:00", update_schedule="every Tuesday, Thursday, Friday at 15:30")
         assert_update_case(jobs, tools, case="UPDATE_WEEKDAY_SET", now_iso="2026-05-13T08:00:00+08:00", initial_schedule="every Monday at 09:00", update_schedule="every Tuesday, Thursday at 15:30")
         assert_update_case(jobs, tools, case="SAME_DAY_FUTURE_AFTER_UPDATE", now_iso="2026-05-13T08:00:00+08:00", initial_schedule="every Monday at 09:00", update_schedule="every Wednesday at 15:30")
         assert_update_case(jobs, tools, case="SAME_DAY_PAST_AFTER_UPDATE", now_iso="2026-05-13T16:00:00+08:00", initial_schedule="every Monday at 09:00", update_schedule="every Wednesday at 15:30")

@@ -29,3 +29,8 @@ Verification:
 No private route activated.
 No default model changed.
 No scenario-specific reminder names hardcoded.
+
+Follow-up verification for repeated Phase 7G-F request:
+- Added exact generic regression for Wednesday 2026-05-13 00:05 Asia/Shanghai updating a weekly 15:30 reminder to Tuesday, Thursday, Friday.
+- Expected next run is computed generically as 2026-05-14T15:30:00+08:00.
+- Polished generic friendly labels by removing possessive suffixes and reminder-offset suffixes without hardcoding a specific reminder name.

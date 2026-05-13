@@ -212,17 +212,28 @@ def clean_job_name(name: str) -> str:
     return re.sub(r"\s+", " ", value)
 
 
+def _friendly_label_case(text: str) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return "reminder"
+    return text[:1].upper() + text[1:].lower()
+
+
 def derive_label(query: str, job: dict | None = None) -> str:
     tokens = query_tokens(query)
     if job and len(tokens) <= 1:
         name = clean_job_name(str(job.get("name") or ""))
+        name = re.sub(r"'s\b", "", name, flags=re.I)
         name = re.sub(r"\s+starts\s+in\s+.+$", "", name, flags=re.I)
         name = re.sub(r"\s+-\s+\d+\s+hours?\s+before$", "", name, flags=re.I)
+        name = re.sub(r"\s+-\s+\d+\s+hours?\s+reminder$", "", name, flags=re.I)
+        if tokens and re.search(r"\bclass\b", name, flags=re.I):
+            return _friendly_label_case(tokens[0] + " class reminder")
         if name:
-            cleaned = name[:1].lower() + name[1:]
-            return cleaned if cleaned.lower().endswith("reminder") else cleaned + " reminder"
+            label = name if name.lower().endswith("reminder") else name + " reminder"
+            return _friendly_label_case(label)
     if tokens:
-        return " ".join(tokens) + " reminder"
+        return _friendly_label_case(" ".join(tokens) + " reminder")
     return "reminder"
 
 
