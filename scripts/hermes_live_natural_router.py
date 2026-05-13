@@ -38,6 +38,20 @@ DRY_RUN_DELEGATION_RE = re.compile(
     r'\bwhich\s+agent\b.*\bwhat\s+would\s+it\s+do\b',
     re.I,
 )
+READONLY_EXECUTION_RE = re.compile(
+    r'\bcheck\b.*\b(gateway|provider|model|backup|route[- ]audit)\b|'
+    r'\brun\s+(quick|deep)\s+healthcheck\b|'
+    r'\bshow\s+(recent\s+)?delegated\s+tasks\b|'
+    r'\bshow\s+(me\s+)?(all\s+)?my\s+reminders\b|'
+    r'\bwhat\s+reminders\s+do\s+i\s+have\b|'
+    r'\bverify\s+latest\s+git\s+backup\b',
+    re.I,
+)
+RISKY_LIVE_EXECUTION_RE = re.compile(
+    r'\b(restart|fix|patch|edit|write|delete|install|deploy|migrate|configure)\b|'
+    r'\b(create|update|delete)\b.*\b(reminder|database|file|service)\b',
+    re.I,
+)
 
 
 def mask(text: str) -> str:
@@ -137,6 +151,43 @@ def parse_delegate_output(text: str) -> dict[str, str]:
             data[k.strip()] = v.strip()
     return data
 
+
+
+
+def risky_execution_block_response(message: str) -> str:
+    return ('Your Majesty, that live delegated action is blocked as risky.\n\n'
+            'I did not execute it. Live delegated execution is currently limited to read-only checks. '
+            'I can prepare a dry-run plan instead.')
+
+
+def is_risky_live_execution(message: str) -> bool:
+    return bool(RISKY_LIVE_EXECUTION_RE.search(message or ''))
+
+def readonly_execution_response(message: str) -> str:
+    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'execute-readonly', message or ''], timeout=320)
+    data = parse_delegate_output(out)
+    if rc != 0 or not data:
+        return 'Your Majesty, I could not complete the read-only delegated check.\n\nNOT VERIFIED'
+    if data.get('verification_status') == 'BLOCKED_RISKY_ACTION':
+        return ('Your Majesty, that live delegated action is blocked as risky.\n\n'
+                'I did not execute it. I can prepare a dry-run plan instead.')
+    status = data.get('verification_status', 'NOT VERIFIED')
+    agent = data.get('assigned_agent', 'Ops & Verification Agent')
+    summary = data.get('summary', 'Read-only check completed.')
+    evidence = data.get('evidence', '').strip()
+    command = data.get('command_or_tool_used', 'read-only tool')
+    text = (f'Your Majesty, {summary}\n\n'
+            f'Agent: {agent}\n'
+            f'Verification: {status}\n'
+            f'Read-only tool: {command}')
+    if evidence:
+        text += f'\nEvidence: {evidence[:900]}'
+    text += '\n\nNo files, services, reminders, packages, databases, or provider settings were changed.'
+    return text
+
+
+def is_readonly_execution_intent(message: str) -> bool:
+    return bool(READONLY_EXECUTION_RE.search(message or ''))
 
 def dry_run_delegation_response(message: str) -> str:
     rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'delegate', message or '', '--dry-run'], timeout=60)
@@ -281,6 +332,16 @@ def handle(message: str) -> dict[str, Any]:
         response = dry_run_delegation_response(message or '')
         decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_dry_run', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'safe dry-run delegation plan'}
         tool = 'hermes_agent_delegate_dry_run'
+    elif is_readonly_execution_intent(message or ''):
+        direct = True
+        response = readonly_execution_response(message or '')
+        decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_execute_readonly', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'permission-gated read-only delegation'}
+        tool = 'hermes_agent_delegate_execute_readonly'
+    elif is_risky_live_execution(message or ''):
+        direct = True
+        response = risky_execution_block_response(message or '')
+        decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_blocked_risky', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'blocked risky live delegated execution'}
+        tool = 'hermes_agent_delegate_blocked_risky'
     elif guard.get('applies') and guard.get('direct_response'):
         direct = True
         response = str(guard.get('response') or '').strip() or 'NOT VERIFIED\nREASON=REMINDER_GUARD_EMPTY_RESPONSE'

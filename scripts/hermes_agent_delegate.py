@@ -405,6 +405,114 @@ def delegate(message: str, dry_run: bool) -> Dict[str, Any]:
     return {"task_id": task_id, "classification": cls, "report_path": str(path), "report": report, "verification": verification}
 
 
+
+BLOCKED_RISKY_PATTERNS = [
+    r"\brestart\b", r"\bfix\b", r"\bpatch\b", r"\bedit\b", r"\bwrite\b", r"\bdelete\b",
+    r"\bcreate\s+(a\s+)?reminder\b", r"\bupdate\s+(a\s+)?reminder\b", r"\bdelete\s+(a\s+)?reminder\b",
+    r"\binstall\b", r"\bdeploy\b", r"\bmigrate\b", r"\bdatabase\s+write\b", r"\bconfigure\b",
+]
+
+
+def readonly_plan(message: str) -> Dict[str, Any]:
+    t = (message or "").lower()
+    if any(re.search(pat, t) for pat in BLOCKED_RISKY_PATTERNS):
+        return {"allowed": False, "kind": "blocked", "reason": "BLOCKED_RISKY_ACTION"}
+    if "deep" in t and ("healthcheck" in t or "health check" in t):
+        return {"allowed": True, "kind": "deep_healthcheck", "args": ["/usr/local/bin/hermes_ops_healthcheck", "--deep"], "contains": "OPS_HEALTHCHECK_DEEP=PASSED", "summary": "Deep Ops Guardian healthcheck completed."}
+    if "quick" in t and ("healthcheck" in t or "health check" in t):
+        return {"allowed": True, "kind": "quick_healthcheck", "args": ["/usr/local/bin/hermes_ops_healthcheck", "--quick"], "contains": "OPS_HEALTHCHECK_QUICK=PASSED", "summary": "Quick Ops Guardian healthcheck completed."}
+    if "gateway" in t and any(w in t for w in ["health", "healthy", "status", "check"]):
+        return {"allowed": True, "kind": "gateway_active", "args": ["/bin/systemctl", "is-active", "hermes-gateway.service"], "contains": "active", "summary": "Hermes gateway service status checked."}
+    if "provider" in t or "model" in t:
+        return {"allowed": True, "kind": "provider_status", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_provider_status.py", "status", "--format", "friendly"], "contains": "NewCoin", "summary": "Provider/model status checked."}
+    if "delegated" in t or "task ledger" in t or "agent tasks" in t:
+        return {"allowed": True, "kind": "delegated_task_status", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_agent_delegate.py", "status", "--limit", "8"], "contains": "assigned_agent", "summary": "Recent delegated task ledger read."}
+    if "reminder" in t or "reminders" in t or "alerts" in t:
+        return {"allowed": True, "kind": "reminder_lookup", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_reminder_lookup.py", "list", "--format", "friendly"], "contains": "verified", "summary": "Reminder list read from storage."}
+    if "latest" in t and "backup" in t:
+        return {"allowed": True, "kind": "latest_backup", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_verify_claim.py", "latest-backup"], "contains": "VERIFIED", "summary": "Latest Git backup commit verified."}
+    if "route" in t and "audit" in t:
+        return {"allowed": True, "kind": "route_audit", "args": ["/usr/bin/tail", "-20", "/root/.hermes/model_routing/live_route_audit.jsonl"], "contains": "route", "summary": "Recent route-audit entries inspected."}
+    return {"allowed": False, "kind": "blocked", "reason": "NOT_READ_ONLY_WHITELISTED"}
+
+
+def readonly_report(task_id: str, message: str, cls: Dict[str, Any], plan: Dict[str, Any], proc: Dict[str, Any] | None) -> Dict[str, Any]:
+    blocked = not plan.get("allowed")
+    ok = bool(proc and proc.get("ok") and str(plan.get("contains") or "") in (proc.get("stdout", "") + proc.get("stderr", "")))
+    status = "blocked" if blocked else ("completed" if ok else "failed")
+    verification_status = "BLOCKED_RISKY_ACTION" if blocked and plan.get("reason") == "BLOCKED_RISKY_ACTION" else ("NOT VERIFIED" if blocked else ("VERIFIED" if ok else "FAILED"))
+    command_label = " ".join(plan.get("args") or []) if plan.get("args") else "NONE_BLOCKED"
+    evidence = [] if blocked else [{"type": "command_contains", "command": command_label, "contains": plan.get("contains", "")}]
+    return {
+        "READ_ONLY_EXECUTION_REPORT": True,
+        "TASK_REPORT": True,
+        "task_id": task_id,
+        "assigned_agent": cls["recommended_agent"],
+        "agent": cls["recommended_agent"],
+        "route": cls.get("route"),
+        "provider": cls.get("provider"),
+        "model": cls.get("model"),
+        "status": status,
+        "read_only": True,
+        "command_or_tool_used": command_label,
+        "summary": plan.get("summary") or plan.get("reason") or "Read-only execution blocked or unavailable.",
+        "evidence": evidence,
+        "command_output_excerpt": mask(((proc or {}).get("stdout", "") + "\n" + (proc or {}).get("stderr", ""))[:3000]),
+        "verification_status": verification_status,
+        "actions_not_taken": ["No file edits.", "No service restarts.", "No package installs.", "No database writes.", "No reminder create/update/delete.", "No arbitrary shell execution."],
+        "risks_or_warnings": ["Read-only whitelist enforced."] if not blocked else ["Request was not allowed by read-only whitelist."],
+        "verification_recommendation": "Use report verification before claiming success.",
+        "final_answer_suggestion": "Return concise evidence and verification status.",
+    }
+
+
+def execute_readonly(message: str) -> Dict[str, Any]:
+    ensure_dirs()
+    cls = classify(message)
+    task_id = task_id_for("readonly:" + message)
+    plan = readonly_plan(message)
+    proc = run_cmd(plan["args"], timeout=300) if plan.get("allowed") else None
+    report = readonly_report(task_id, message, cls, plan, proc)
+    path = write_report(task_id, report)
+    record = {
+        "task_id": task_id,
+        "timestamp": now_iso(),
+        "user_intent_summary": mask(message[:240]),
+        "assigned_agent": cls["recommended_agent"],
+        "route": cls.get("route"),
+        "provider": cls.get("provider"),
+        "model": cls.get("model"),
+        "status": report["status"],
+        "risk_level": cls.get("risk_level"),
+        "read_only": True,
+        "evidence_required": True,
+        "report_path": str(path),
+        "verification_status": report["verification_status"],
+    }
+    write_ledger(record)
+    return {"task_id": task_id, "classification": cls, "report_path": str(path), "report": report}
+
+
+def format_readonly_response(result: Dict[str, Any]) -> str:
+    report = result["report"]
+    lines = [
+        "READ_ONLY_EXECUTION_REPORT=CREATED",
+        "task_id=" + str(result.get("task_id")),
+        "assigned_agent=" + str(report.get("assigned_agent")),
+        "route=" + str(report.get("route")),
+        "provider=" + str(report.get("provider")),
+        "model=" + str(report.get("model")),
+        "status=" + str(report.get("status")),
+        "verification_status=" + str(report.get("verification_status")),
+        "read_only=true",
+        "command_or_tool_used=" + str(report.get("command_or_tool_used")),
+        "summary=" + str(report.get("summary")),
+    ]
+    if report.get("command_output_excerpt"):
+        lines.append("evidence=" + str(report.get("command_output_excerpt")).replace("\n", " | ")[:1200])
+    lines.append("actions_not_taken=" + "; ".join(map(str, report.get("actions_not_taken") or [])))
+    return "\n".join(lines)
+
 def status(limit: int = 10) -> List[Dict[str, Any]]:
     if not LEDGER.exists():
         return []
@@ -443,6 +551,9 @@ def main() -> int:
     p_del.add_argument("--format", choices=["friendly", "raw"], default="friendly")
     p_status = sub.add_parser("status", help="Show recent delegated task statuses.")
     p_status.add_argument("--limit", type=int, default=10)
+    p_read = sub.add_parser("execute-readonly", help="Execute a permission-gated read-only delegated task.")
+    p_read.add_argument("message")
+    p_read.add_argument("--format", choices=["friendly", "raw"], default="friendly")
     args = parser.parse_args()
 
     if args.cmd == "classify":
@@ -471,6 +582,13 @@ def main() -> int:
             else:
                 print("report_path=" + result["report_path"])
                 print("verification_status=" + ("VERIFIED" if result["verification"]["verified"] else "NOT VERIFIED"))
+        return 0
+    if args.cmd == "execute-readonly":
+        result = execute_readonly(args.message)
+        if args.format == "raw":
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            print(format_readonly_response(result))
         return 0
     if args.cmd == "status":
         rows = status(args.limit)
