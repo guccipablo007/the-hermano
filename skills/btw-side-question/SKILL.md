@@ -35,3 +35,7 @@ Rules:
 - Keep `/btw` read-only by default.
 - Block risky actions from `/btw` instead of executing them.
 - Never expose secrets, full chat IDs, tokens, API keys, passwords, or OAuth data.
+
+## Provider Status Side Questions
+
+For `/btw` questions about the current provider or model, use storage-backed provider status from `/root/.hermes/scripts/hermes_provider_status.py` when available. Keep output friendly by default and never expose provider keys or headers.

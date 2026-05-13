@@ -8,6 +8,7 @@ from pathlib import Path
 
 RECALL = Path('/root/.hermes/scripts/hermes_session_recall.py')
 VERIFY = Path('/root/.hermes/scripts/hermes_verify_claim.py')
+PROVIDER_STATUS = Path('/root/.hermes/scripts/hermes_provider_status.py')
 TIME_CONTEXT = Path('/root/.hermes/scripts/hermes_time_context.py')
 CONFIG = Path('/root/.hermes/config.yaml')
 
@@ -169,7 +170,12 @@ def format_time(raw: str) -> str:
     return text or 'Your Majesty, I could not verify the current China time.\n\nNOT VERIFIED'
 
 
-def answer_model() -> str:
+def answer_model(raw_mode: bool = False) -> str:
+    if PROVIDER_STATUS.exists():
+        fmt = 'raw' if raw_mode else 'friendly'
+        rc, out = run(['python3', str(PROVIDER_STATUS), 'status', '--format', fmt], timeout=60)
+        if rc == 0 and out.strip():
+            return out.strip()
     if not CONFIG.exists():
         return 'Your Majesty, I could not verify the Hermes model from local config.\n\nNOT VERIFIED'
     try:
@@ -208,8 +214,8 @@ def handle(question: str) -> str:
             return raw_or_not_verified(rc, out) if raw_mode else format_time(out)
         return 'Your Majesty, I could not verify the current China time.\n\nNOT VERIFIED'
 
-    if 'model' in low and ('using' in low or 'current' in low or 'hermes' in low):
-        return answer_model()
+    if (('model' in low or 'provider' in low) and ('using' in low or 'current' in low or 'hermes' in low or 'now' in low)):
+        return answer_model(raw_mode)
 
     if 'backup' in low and ('commit' in low or 'latest' in low):
         if VERIFY.exists():

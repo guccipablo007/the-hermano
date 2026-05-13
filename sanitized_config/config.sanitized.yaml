@@ -156,10 +156,12 @@ providers:
     key_env: NEWCOIN_API_KEY
     api_mode: chat_completions
     models:
+      gemini-2.5-flash:
+        context_length: 1048576
+      kimi-k2.6:
+        context_length: 131072
+      deepseek-v3.2:
+        context_length: 131072
       qwen3-32b:
-        context_length: 131072
-      kimi-k2:
-        context_length: 131072
-      doubao-seed-2-0-code-preview-260215:
         context_length: 131072
 fallback_providers: *id001

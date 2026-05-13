@@ -679,3 +679,18 @@ When creating PDF lessons:
 - keep grammar corrected through phrase normalization
 
 Do not test DOCX unless the phase or user asks for DOCX testing.
+
+## NewCoin Popular Model Routing Note
+
+NewCoin is the primary provider. Use verified popular NewCoin model IDs from `/models`, not guessed names.
+
+Current verified routing:
+- Default/general/simple: `gemini-2.5-flash`
+- Reasoning/agentic: `kimi-k2.6`
+- Coding/debugging: `deepseek-v3.2`
+- OpenRouter: fallback only
+
+Do not use Doubao as the primary coding route unless explicitly re-verified and requested.
+Do not use GPT/OpenAI models on NewCoin as defaults because they may be expensive.
+
+Future planning only: `/nc` may later force NewCoin for a request, with optional hints such as `/nc code`, `/nc reason`, or `/nc cheap`. This is not implemented yet.
