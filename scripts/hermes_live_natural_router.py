@@ -26,7 +26,16 @@ AGENT_PREVIEW_RE = re.compile(
 )
 AGENT_EXECUTION_RE = re.compile(
     r'\b(delegate|agent)\b.*\b(run|execute|start|fix|patch|edit|create|restart|deploy|change)\b|'
-    r'\b(run|execute|start)\b.*\b(agent|delegated\s+task)\b',
+    r'\b(run|execute|start)\b.*\b(agent|delegated\s+task)\b|'
+    r'\b(run|execute|start|fix|patch|edit|create|restart|deploy)\b.*\b(now\b|for\s+me\b)',
+    re.I,
+)
+DRY_RUN_DELEGATION_RE = re.compile(
+    r'\bdry[- ]run\b.*\b(plan|delegat|task|agent|check|fix|prepare|create)\b|'
+    r'\bprepare\b.*\bdry[- ]run\b|'
+    r'\bcreate\b.*\bdry[- ]run\b.*\bplan\b|'
+    r'\bdelegate\b.*\bsafely\b|'
+    r'\bwhich\s+agent\b.*\bwhat\s+would\s+it\s+do\b',
     re.I,
 )
 
@@ -118,6 +127,45 @@ def should_direct_for_debug(decision: dict[str, Any], message: str) -> bool:
     return not DEBUG_DETAIL_RE.search(message or '')
 
 
+
+
+def parse_delegate_output(text: str) -> dict[str, str]:
+    data: dict[str, str] = {}
+    for line in (text or '').splitlines():
+        if '=' in line:
+            k, v = line.split('=', 1)
+            data[k.strip()] = v.strip()
+    return data
+
+
+def dry_run_delegation_response(message: str) -> str:
+    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'delegate', message or '', '--dry-run'], timeout=60)
+    data = parse_delegate_output(out)
+    if rc != 0 or data.get('verification_status') != 'NOT_EXECUTED_DRY_RUN':
+        return 'Your Majesty, I could not create a verified dry-run delegation plan.\n\nNOT VERIFIED'
+    agent = data.get('assigned_agent', 'NOT VERIFIED')
+    route = data.get('route', 'NOT VERIFIED')
+    provider = data.get('provider', 'NewCoin')
+    model = data.get('model', 'NOT VERIFIED')
+    task_id = data.get('task_id', 'NOT VERIFIED')
+    inputs = data.get('required_user_inputs', 'None listed')
+    actions = data.get('proposed_actions', 'None listed')
+    prohibited = data.get('prohibited_actions', 'No commands executed; no files edited; no services restarted; no reminders changed.')
+    return (
+        'Your Majesty, I created a dry-run delegation plan.\n\n'
+        f'Task ID: {task_id}\n'
+        f'Assigned agent: {agent}\n'
+        f'Route: {route}\n'
+        f'Model: {provider} {model}\n\n'
+        f'Required input: {inputs}\n\n'
+        f'Plan: {actions}\n\n'
+        f'Not executed: {prohibited}\n\n'
+        'Verification status: NOT_EXECUTED_DRY_RUN'
+    )
+
+
+def is_dry_run_delegation_intent(message: str) -> bool:
+    return bool(DRY_RUN_DELEGATION_RE.search(message or ''))
 
 def parse_key_values(text: str) -> dict[str, str]:
     data: dict[str, str] = {}
@@ -228,7 +276,12 @@ def handle(message: str) -> dict[str, Any]:
         decision = {'route': 'default', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'validated reminder create intent; storage verification required after create'}
         route = 'default'
         tool = None
-    if guard.get('applies') and guard.get('direct_response'):
+    if is_dry_run_delegation_intent(message or ''):
+        direct = True
+        response = dry_run_delegation_response(message or '')
+        decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_dry_run', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'safe dry-run delegation plan'}
+        tool = 'hermes_agent_delegate_dry_run'
+    elif guard.get('applies') and guard.get('direct_response'):
         direct = True
         response = str(guard.get('response') or '').strip() or 'NOT VERIFIED\nREASON=REMINDER_GUARD_EMPTY_RESPONSE'
         decision = {'route': 'tool', 'tool': 'hermes_reminder_intent_guard', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': guard.get('category')}

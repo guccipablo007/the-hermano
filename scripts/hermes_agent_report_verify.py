@@ -21,7 +21,7 @@ SECRET_PATTERNS = [
     re.compile(r"(?i)chat_id[=: ]+[-]?\d{6,}"),
 ]
 
-VALID_STATUSES = {"completed", "blocked", "failed", "needs_user_input"}
+VALID_STATUSES = {"completed", "blocked", "failed", "needs_user_input", "planned"}
 
 
 def mask(text: Any) -> str:
@@ -128,6 +128,10 @@ def verify_report(path: Path) -> Tuple[bool, List[str]]:
     except Exception as exc:
         return False, [f"report parse failed: {type(exc).__name__}:{mask(exc)}"]
     status = str(data.get("status") or "").strip()
+    if status == "planned" or data.get("DRY_RUN_DELEGATION_PLAN") or data.get("dry_run"):
+        if data.get("verification_status") == "NOT_EXECUTED_DRY_RUN" and data.get("actions_not_taken"):
+            return True, ["NOT_EXECUTED_DRY_RUN", "dry-run plan only; no execution success claimed"]
+        return False, ["dry-run report missing NOT_EXECUTED_DRY_RUN or actions_not_taken"]
     if status not in VALID_STATUSES:
         messages.append(f"invalid status: {mask(status)}")
     evidence = normalize_evidence(data.get("evidence"))
@@ -156,9 +160,14 @@ def main() -> int:
         parser.print_help()
         return 0
     ok, messages = verify_report(Path(args.report))
-    print("VERIFIED" if ok else "NOT VERIFIED")
-    for msg in messages[:20]:
-        print(mask(msg))
+    if ok and messages and messages[0] == "NOT_EXECUTED_DRY_RUN":
+        print("NOT_EXECUTED_DRY_RUN")
+        for msg in messages[1:20]:
+            print(mask(msg))
+    else:
+        print("VERIFIED" if ok else "NOT VERIFIED")
+        for msg in messages[:20]:
+            print(mask(msg))
     return 0 if ok else 2
 
 if __name__ == "__main__":

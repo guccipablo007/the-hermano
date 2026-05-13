@@ -137,7 +137,10 @@ def classify(message: str) -> Dict[str, Any]:
     display_route = decision.get("route") or agent["route"]
     display_model = decision.get("model") or agent["model"]
     display_provider = decision.get("provider") or agent["provider"]
-    if agent_id == "ops_verification":
+    if agent_id == "apps_coding_complex":
+        display_route = "coding/debugging"
+        display_model = "deepseek-v3.2"
+    elif agent_id == "ops_verification":
         display_route = "tool-first/verification"
         display_model = "qwen3-32b" if tool or any(w in t for w in ["health", "healthy", "status", "backup", "provider", "verify", "proof"]) else display_model
     elif agent_id == "personal_admin_tutor":
@@ -184,6 +187,122 @@ def write_report(task_id: str, report: Dict[str, Any]) -> Path:
     os.chmod(path, 0o600)
     return path
 
+
+
+def dry_run_blueprint(message: str, cls: Dict[str, Any]) -> Dict[str, Any]:
+    agent_id = cls.get("recommended_agent_id") or "overseer"
+    low = (message or "").lower()
+    common_prohibited = [
+        "No commands executed.",
+        "No files edited.",
+        "No services restarted.",
+        "No reminders created, changed, or deleted.",
+        "No destructive tools called.",
+    ]
+    if agent_id == "apps_coding_complex":
+        return {
+            "summary": "Dry-run plan for an app/coding/debugging task.",
+            "why_this_agent": "The request involves app, Firebase, Firestore, code, logs, or debugging work.",
+            "proposed_steps": [
+                "Collect the exact error message, logs, and smallest relevant code/config snippet.",
+                "Identify the failing layer: client code, Firebase rules, SDK initialization, network/auth, or Firestore write path.",
+                "Inspect only credential-free configuration and code paths provided by the user.",
+                "Propose a minimal patch and verification commands after evidence is available.",
+            ],
+            "required_user_inputs": ["Exact error/log output", "Relevant code snippet", "Firebase/Firestore config shape with credentials removed", "What action should trigger the write"],
+            "evidence_needed_before_success": ["Reproduced error or log", "Patch diff if execution is later allowed", "Passing verification command or confirmed app behavior"],
+            "risks_or_warnings": ["Do not inspect credentials or service-account private values.", "Do not edit files until execution is explicitly enabled."],
+            "actions_not_taken": common_prohibited,
+        }
+    if agent_id == "ops_verification":
+        return {
+            "summary": "Dry-run plan for Ops and Verification work.",
+            "why_this_agent": "The request asks for health, provider, gateway, backup, log, or verification evidence.",
+            "proposed_steps": [
+                "Run read-only status checks when execution is later allowed.",
+                "Inspect healthcheck output, systemd status, recent logs, and verified records.",
+                "Compare claims against tool output or stored evidence.",
+                "Return VERIFIED or NOT VERIFIED with concise evidence.",
+            ],
+            "required_user_inputs": ["Scope of verification", "Whether read-only checks are allowed", "Relevant time window if checking logs"],
+            "evidence_needed_before_success": ["Healthcheck pass marker", "systemctl active status", "log excerpt or stored verification record", "backup commit hash if backup-related"],
+            "risks_or_warnings": ["Dry-run does not restart services.", "Dry-run does not change gateway state."],
+            "actions_not_taken": common_prohibited,
+        }
+    if agent_id == "personal_admin_tutor":
+        return {
+            "summary": "Dry-run plan for personal/admin/tutor work.",
+            "why_this_agent": "The request involves reminders, schedules, lesson planning, student/class admin, or tutoring work.",
+            "proposed_steps": [
+                "For reminders, query verified storage first and apply the query-first guard for ambiguous phrasing.",
+                "Ask for missing date/time/task before any reminder creation.",
+                "For lesson/admin tasks, gather topic, student level, format, and output requirements.",
+                "Only create files or reminders after explicit execution is enabled and verification requirements are met.",
+            ],
+            "required_user_inputs": ["For reminders: task, date/relative date, time/offset", "For lessons: topic, age/level, format, and length"],
+            "evidence_needed_before_success": ["Storage-backed reminder record after creation", "File existence/media verification for generated lesson artifacts"],
+            "risks_or_warnings": ["No reminder is created in dry-run.", "No schedule is guessed from memory."],
+            "actions_not_taken": common_prohibited,
+        }
+    return {
+        "summary": "Dry-run plan for Overseer coordination.",
+        "why_this_agent": "The request needs coordination, routing, or clarification before specialist work.",
+        "proposed_steps": ["Clarify intent", "Select specialist if needed", "Define evidence requirements", "Avoid success claims without verification"],
+        "required_user_inputs": ["Clarify the desired outcome"],
+        "evidence_needed_before_success": ["Tool output, file check, service status, or stored verification record"],
+        "risks_or_warnings": ["No specialist execution occurred."],
+        "actions_not_taken": common_prohibited,
+    }
+
+
+def dry_run_report(task_id: str, message: str, cls: Dict[str, Any]) -> Dict[str, Any]:
+    bp = dry_run_blueprint(message, cls)
+    return {
+        "DRY_RUN_DELEGATION_PLAN": True,
+        "TASK_REPORT": True,
+        "task_id": task_id,
+        "dry_run": True,
+        "assigned_agent": cls["recommended_agent"],
+        "agent": cls["recommended_agent"],
+        "route": cls.get("route"),
+        "provider": cls.get("provider"),
+        "model": cls.get("model"),
+        "status": "planned",
+        "summary": bp["summary"],
+        "why_this_agent": bp["why_this_agent"],
+        "proposed_steps": bp["proposed_steps"],
+        "required_user_inputs": bp["required_user_inputs"],
+        "evidence_needed_before_success": bp["evidence_needed_before_success"],
+        "risks_or_warnings": bp["risks_or_warnings"],
+        "actions_not_taken": bp["actions_not_taken"],
+        "actions_taken": ["Classified request", "Created dry-run task ledger entry", "Created dry-run report"],
+        "files_changed": [],
+        "commands_run": [],
+        "tests_run": [],
+        "evidence": [],
+        "verification_status": "NOT_EXECUTED_DRY_RUN",
+        "verification_recommendation": "Dry-run only. Do not claim execution success.",
+        "final_answer_suggestion": "Present the plan and request missing inputs; do not claim completion.",
+    }
+
+
+def format_dry_run_response(report: Dict[str, Any]) -> str:
+    lines = [
+        "DRY_RUN_DELEGATION_PLAN=CREATED",
+        "task_id=" + str(report.get("task_id")),
+        "assigned_agent=" + str(report.get("assigned_agent")),
+        "route=" + str(report.get("route")),
+        "provider=" + str(report.get("provider")),
+        "model=" + str(report.get("model")),
+        "verification_status=NOT_EXECUTED_DRY_RUN",
+        "",
+        "summary=" + str(report.get("summary")),
+        "why_this_agent=" + str(report.get("why_this_agent")),
+        "required_user_inputs=" + "; ".join(map(str, report.get("required_user_inputs") or [])),
+        "proposed_actions=" + "; ".join(map(str, report.get("proposed_steps") or [])),
+        "prohibited_actions=" + "; ".join(map(str, report.get("actions_not_taken") or [])),
+    ]
+    return "\n".join(lines)
 
 def safe_tool_report(task_id: str, message: str, cls: Dict[str, Any]) -> Dict[str, Any]:
     tool = cls.get("tool")
@@ -263,8 +382,19 @@ def delegate(message: str, dry_run: bool) -> Dict[str, Any]:
     }
 
     if dry_run:
+        report = dry_run_report(task_id, message, cls)
+        path = write_report(task_id, report)
+        record.update({
+            "dry_run": True,
+            "status": "planned",
+            "required_user_inputs": report.get("required_user_inputs", []),
+            "proposed_actions": report.get("proposed_steps", []),
+            "prohibited_actions": report.get("actions_not_taken", []),
+            "verification_status": "NOT_EXECUTED_DRY_RUN",
+            "report_path": str(path),
+        })
         write_ledger(record)
-        return {"task_id": task_id, "mode": "dry-run", "classification": cls, "task_record": record, "execution": "NOT_EXECUTED"}
+        return {"task_id": task_id, "mode": "dry-run", "classification": cls, "task_record": record, "report_path": str(path), "report": report, "execution": "NOT_EXECUTED"}
 
     report = safe_tool_report(task_id, message, cls)
     path = write_report(task_id, report)
@@ -333,6 +463,11 @@ def main() -> int:
             print("risk_level=" + str(cls.get("risk_level")))
             if args.dry_run:
                 print("execution=NOT_EXECUTED")
+                print("report_path=" + result.get("report_path", ""))
+                print("verification_status=NOT_EXECUTED_DRY_RUN")
+                print("required_user_inputs=" + "; ".join(map(str, result.get("report", {}).get("required_user_inputs", []))))
+                print("proposed_actions=" + "; ".join(map(str, result.get("report", {}).get("proposed_steps", []))))
+                print("prohibited_actions=" + "; ".join(map(str, result.get("report", {}).get("actions_not_taken", []))))
             else:
                 print("report_path=" + result["report_path"])
                 print("verification_status=" + ("VERIFIED" if result["verification"]["verified"] else "NOT VERIFIED"))
