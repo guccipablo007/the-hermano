@@ -112,3 +112,24 @@ Rules:
 - Raw/debug mode may show raw cron expressions with secrets and chat IDs masked.
 - Friendly output must format `next_run_at` from the stored datetime object.
 - Do not hardcode reminder names or person names for formatting.
+
+## Query-First Ambiguous Reminder Rule
+
+For ambiguous reminder-related messages, query verified reminder storage before creating anything.
+
+Examples that must be query-first and must not create immediately:
+- "Reminder for tomorrow?"
+- "Any reminders tomorrow?"
+- "Do I have reminders tomorrow?"
+- "Remind me tomorrow"
+- "Set a reminder tomorrow"
+- "Reminder?"
+
+Required behavior:
+- Check storage-backed reminders for the relevant China-time window first.
+- Report verified reminders if found.
+- If none are found, say no verified reminders were found.
+- Ask for missing task and/or time before creation.
+- Do not guess upload/class/event schedules from memory.
+- Event-based reminders such as "1 hour before my class" require a unique verified event before creation.
+- A reminder is not scheduled until storage confirms job existence, next_run_at, and delivery target.

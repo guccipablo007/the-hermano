@@ -66,6 +66,18 @@ TOOL_RULES = [
         ],
     ),
     (
+        'reminder-intent-guard',
+        'hermes_reminder_intent_guard',
+        [
+            r'\breminders?\s+for\s+tomorrow\b',
+            r'\bany\s+reminders?\s+tomorrow\b',
+            r'\bdo\s+i\s+have\s+reminders?\s+tomorrow\b',
+            r'\bremind\s+me\s+tomorrow\b',
+            r'\bset\s+a\s+reminder\s+tomorrow\b',
+            r'^\s*reminders?\??\s*$',
+        ],
+    ),
+    (
         'healthcheck',
         'hermes_ops_healthcheck',
         [

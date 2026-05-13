@@ -201,6 +201,18 @@ def is_agent_preview_intent(message: str) -> bool:
     return bool(AGENT_PREVIEW_RE.search(text) or AGENT_EXECUTION_RE.search(text))
 
 
+
+def reminder_guard(message: str) -> dict[str, Any]:
+    rc, out = run(['python3', str(SCRIPTS / 'hermes_reminder_intent_guard.py'), message or '', '--format', 'json'], timeout=45)
+    if rc != 0 or not out.strip():
+        return {'applies': False, 'direct_response': False, 'category': 'guard_unavailable'}
+    try:
+        data = json.loads(out)
+        return data if isinstance(data, dict) else {'applies': False, 'direct_response': False, 'category': 'guard_bad_json'}
+    except Exception:
+        return {'applies': False, 'direct_response': False, 'category': 'guard_parse_failed'}
+
+
 def handle(message: str) -> dict[str, Any]:
     decision = hermes_model_router.classify_message(message or '')
     route = decision.get('route')
@@ -208,7 +220,20 @@ def handle(message: str) -> dict[str, Any]:
     response = ''
     direct = False
 
-    if is_agent_preview_intent(message or ''):
+    guard = reminder_guard(message or '')
+    if guard.get('applies') and guard.get('create_allowed') and not guard.get('direct_response'):
+        # Fully specified reminder create requests may continue to the existing
+        # verified reminder creation path. The guard only prevents ambiguous
+        # requests from falling through to model guessing.
+        decision = {'route': 'default', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'validated reminder create intent; storage verification required after create'}
+        route = 'default'
+        tool = None
+    if guard.get('applies') and guard.get('direct_response'):
+        direct = True
+        response = str(guard.get('response') or '').strip() or 'NOT VERIFIED\nREASON=REMINDER_GUARD_EMPTY_RESPONSE'
+        decision = {'route': 'tool', 'tool': 'hermes_reminder_intent_guard', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': guard.get('category')}
+        tool = 'hermes_reminder_intent_guard'
+    elif is_agent_preview_intent(message or ''):
         direct = True
         response = agent_preview_response(message or '')
     elif route == 'tool':

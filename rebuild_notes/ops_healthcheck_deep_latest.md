@@ -1,5 +1,5 @@
 # Hermes Ops Healthcheck (deep)
-Generated: 2026-05-13T13:15:16+00:00
+Generated: 2026-05-13T14:16:38+00:00
 MODE=deep
 
 ## Gateway Active
@@ -26,7 +26,7 @@ PY_COMPILE_OK=/usr/local/lib/hermes-agent/cron/jobs.py
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/vda1        77G  7.4G   70G  10% /
                total        used        free      shared  buff/cache   available
-Mem:           1.8Gi       1.4Gi       127Mi       689Mi       1.2Gi       446Mi
+Mem:           1.8Gi       1.4Gi       113Mi       689Mi       1.1Gi       410Mi
 Swap:             0B          0B          0B
 
 ## Recent Gateway Fatal/Error Scan
@@ -42,12 +42,12 @@ PY_COMPILE_OK=/root/.hermes/scripts/hermes_lesson_phrase_normalizer.py
 
 ## Reminder Regression
 REMINDER_CREATE_TEST=PASSED
-JOB_ID=e7c7e5469c6e
-EXPECTED=2026-05-13T21:17:17.394164+08:00
-ACTUAL=2026-05-13T21:17:17.395387+08:00
-DELTA_SECONDS=0.001223
+JOB_ID=a132e0533a05
+EXPECTED=2026-05-13T22:18:39.085521+08:00
+ACTUAL=2026-05-13T22:18:39.086775+08:00
+DELTA_SECONDS=0.001254
 TIMEZONE=Asia/Shanghai
-JOB_ID=8258e65992ad
+JOB_ID=4371699ecf92
 WAITING_FOR_DUE=70_SECONDS
 SCHEDULER_TICK_RAN=2
 JOB_STATE=completed
@@ -60,7 +60,7 @@ REAL_TELEGRAM_SPAM_TEST=SKIPPED_BY_DESIGN
 
 ## Git Backup Details
 GIT_BRANCH=main
-GIT_COMMIT=aa5f23cfd66ac46bfefa28a4992ee11b8c7cdbe9
+GIT_COMMIT=d65e36728f76f821677a12dfc67131a93ccab36b
 GIT_REMOTE=git@github.com-hermes:guccipablo007/the-hermano.git
 
 ## Gateway Status
@@ -68,13 +68,13 @@ GIT_REMOTE=git@github.com-hermes:guccipablo007/the-hermano.git
      Loaded: loaded (/etc/systemd/system/hermes-gateway.service; enabled; preset: enabled)
     Drop-In: /etc/systemd/system/hermes-gateway.service.d
              └─30-ops-healthcheck.conf
-     Active: active (running) since Wed 2026-05-13 10:08:49 UTC; 3h 7min ago
+     Active: active (running) since Wed 2026-05-13 10:08:49 UTC; 4h 8min ago
  Invocation: 8dd11efebc144b2dbae0c0f1263ca7b1
     Process: 134729 ExecStartPost=/bin/bash -lc systemd-run --unit=hermes-ops-startup-healthcheck --property=Type=oneshot --on-active=20s /usr/local/bin/hermes_ops_startup_healthcheck >/dev/null 2>&1 || true (code=exited, status=0/SUCCESS)
    Main PID: 134728 (python)
-      Tasks: 6 (limit: 1141)
-     Memory: 187.4M (peak: 189.1M)
-        CPU: 17.472s
+      Tasks: 5 (limit: 1141)
+     Memory: 187.8M (peak: 219.4M)
+        CPU: 22.716s
      CGroup: /system.slice/hermes-gateway.service
              └─134728 /usr/local/lib/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --replace
 
@@ -205,19 +205,19 @@ May 13 10:08:49 ubuntu systemd[1]: Started hermes-gateway.service - Hermes Agent
 
 ## Cron Status
 HERMES_COMMAND=FOUND
-CRON_JOB_COUNT=139
-{"id": "b9c1d49c0d30", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "2011aa05db93", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "02e3d4241546", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "e7a597e37ac5", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
+CRON_JOB_COUNT=143
 {"id": "0a5d0559fdfa", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "6745b9955916", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "88173c7ede94", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "22609609ddb6", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "0d628b45a216", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "144a953327b8", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
-{"id": "e7c7e5469c6e", "name": "phase7ca_reminder_create_test", "state": "scheduled", "enabled": true, "next_run_at": "2026-05-13T21:17:17.395387+08:00", "last_status": null, "deliver": "local"}
+{"id": "e7c7e5469c6e", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 {"id": "8258e65992ad", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
+{"id": "f27041dbed9d", "name": "phase7ca_reminder_create_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
+{"id": "8aef9bdb1936", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
+{"id": "a132e0533a05", "name": "phase7ca_reminder_create_test", "state": "scheduled", "enabled": true, "next_run_at": "2026-05-13T22:18:39.086775+08:00", "last_status": null, "deliver": "local"}
+{"id": "4371699ecf92", "name": "phase7ca2_reminder_delivery_test", "state": "completed", "enabled": false, "next_run_at": null, "last_status": "ok", "deliver": "local"}
 
 ## Shellcheck
 SHELLCHECK=SKIPPED_NOT_INSTALLED
