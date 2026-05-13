@@ -193,17 +193,45 @@ def join_words(values: list[str]) -> str:
     return ", ".join(values[:-1]) + f", and {values[-1]}"
 
 
+def cron_expr_to_friendly(expr: str) -> str | None:
+    parts = str(expr or "").strip().split()
+    if len(parts) != 5:
+        return None
+    minute, hour, dom, month, dow = parts
+    if not (minute.isdigit() and hour.isdigit()):
+        return None
+    minute_i, hour_i = int(minute), int(hour)
+    if not (0 <= minute_i <= 59 and 0 <= hour_i <= 23):
+        return None
+    if dom == "*" and month == "*" and dow == "*":
+        return f"Every day at {friendly_time(hour_i, minute_i)}."
+    if dom == "*" and month == "*" and re.fullmatch(r"\d", dow):
+        dow_i = int(dow)
+        # Standard cron uses 0 or 7 for Sunday. Python weekday uses Monday=0.
+        cron_to_name = {0: "Sunday", 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday"}
+        if dow_i in cron_to_name:
+            return f"Every {cron_to_name[dow_i]} at {friendly_time(hour_i, minute_i)}."
+    return None
+
+
 def friendly_schedule(job: dict) -> str:
     schedule = job.get("schedule") or {}
     if schedule.get("kind") == "weekly":
         days = [WEEKDAY_NAMES[int(d)] for d in schedule.get("weekdays", []) if 0 <= int(d) <= 6]
         hour, minute = [int(x) for x in str(schedule.get("time", "00:00")).split(":", 1)]
         return f"Every {join_words(days)} at {friendly_time(hour, minute)}."
+    if schedule.get("kind") == "cron":
+        return cron_expr_to_friendly(str(schedule.get("expr") or "")) or "Verified schedule from storage."
     text = schedule_text(job)
+    cron_friendly = cron_expr_to_friendly(text)
+    if cron_friendly:
+        return cron_friendly
     match = re.match(r"every\s+(.+?)\s+at\s+(\d{1,2}):(\d{2})", text, flags=re.I)
     if match:
         days = [d.strip().capitalize() for d in re.split(r",\s*", match.group(1)) if d.strip()]
         return f"Every {join_words(days)} at {friendly_time(int(match.group(2)), int(match.group(3)))}."
+    if re.fullmatch(r"[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+", text.strip()):
+        return "Verified schedule from storage."
     return mask(text)
 
 

@@ -98,3 +98,17 @@ Rules:
 - If storage reload, next-run verification, or formatter consistency fails, say NOT VERIFIED.
 - Do not expose raw cronjob calls, tool JSON, call IDs, full chat IDs, tokens, or API keys in Telegram replies.
 - Do not claim updated unless storage confirms the update and the verified next run is future in Asia/Shanghai.
+
+## Friendly Reminder List Formatting Rule - Phase 7G-G
+
+Reminder list and lookup replies must be storage-backed and human-friendly by default.
+
+Rules:
+- Friendly reminder output must not expose raw cron expressions by default.
+- Convert simple cron schedules to natural language when possible:
+  - daily cron -> Every day at the stored time.
+  - weekly cron -> Every weekday at the stored time.
+- If a cron expression is unsupported, say `Verified schedule from storage.` instead of dumping raw cron.
+- Raw/debug mode may show raw cron expressions with secrets and chat IDs masked.
+- Friendly output must format `next_run_at` from the stored datetime object.
+- Do not hardcode reminder names or person names for formatting.
