@@ -37,3 +37,8 @@ Do not search token folders, OAuth files, `.env`, provider secret files, raw pri
 ## Verification Gate
 
 Recall summaries must cite local evidence. If evidence is missing, say `NOT VERIFIED` instead of guessing.
+
+## Side-Question Formatting Rule - Phase 7H
+
+When Session Recall is used through `/btw`, raw CLI output should be summarized by the side-question handler.
+Default user-facing replies should cite verified records briefly without dumping raw labels or paths.
