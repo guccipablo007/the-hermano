@@ -47,6 +47,15 @@ READONLY_EXECUTION_RE = re.compile(
     r'\bverify\s+latest\s+git\s+backup\b',
     re.I,
 )
+DELEGATED_STATUS_RE = re.compile(
+    r'\bshow\s+(recent\s+)?delegated\s+tasks\b|\bshow\s+agent\s+tasks\b|\bdelegated\s+task\s+status\b',
+    re.I,
+)
+RAW_DELEGATED_STATUS_RE = re.compile(
+    r'\b(raw|debug|json)\b.*\b(delegated\s+tasks?|task\s+ledger|agent\s+tasks?)\b|'
+    r'\bshow\s+(raw|debug)\s+delegated\s+task',
+    re.I,
+)
 LOW_RISK_WRITE_RE = re.compile(
     r'^\s*YES,\s*EXECUTE\s+LOW-RISK\s+WRITE\s*:|'
     r'\b(create|save|add)\b.*\b(task\s+note|agent\s+note|task\s+report|note/report|report)\b',
@@ -279,35 +288,26 @@ def agent_list_response() -> str:
     )
 
 
-def delegated_status_response() -> str:
-    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'status', '--limit', '8'], timeout=45)
+def delegated_status_response(raw: bool = False) -> str:
+    fmt = 'raw' if raw else 'friendly'
+    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'status', '--format', fmt, '--limit', '8'], timeout=45)
     if rc != 0 or not out.strip():
         return 'Your Majesty, I could not verify delegated task status from the task ledger.\n\nNOT VERIFIED'
-    if 'NO_DELEGATED_TASKS_FOUND' in out:
+    if 'NO_DELEGATED_TASKS_FOUND' in out or 'No delegated tasks found' in out:
         return 'Your Majesty, there are no delegated tasks recorded yet.'
-    rows = []
-    for line in out.splitlines():
-        try:
-            item = json.loads(line)
-        except Exception:
-            continue
-        task_id = item.get('task_id', 'unknown')
-        agent = item.get('assigned_agent', 'unknown agent')
-        status = item.get('status', 'unknown')
-        verification = item.get('verification_status', 'NOT VERIFIED')
-        route = item.get('route', 'unknown route')
-        rows.append(f'- {task_id}: {agent} ({route}) - {status}, verification: {verification}')
-    if not rows:
-        return 'Your Majesty, I could not verify delegated task status from the task ledger.\n\nNOT VERIFIED'
-    return 'Your Majesty, these are the recent delegated task records from storage:\n\n' + '\n'.join(rows[:8])
+    if raw:
+        return 'Your Majesty, here is the sanitized raw delegated task ledger output:\n\n' + out
+    return 'Your Majesty, here are your recent delegated tasks:\n\n' + out.replace('Recent delegated tasks:\n', '', 1).strip()
 
 
 def agent_preview_response(message: str) -> str:
     low = (message or '').lower()
     if re.search(r'what\s+agents\s+do\s+you\s+have|list\s+agents', low):
         return agent_list_response()
-    if re.search(r'show\s+(recent\s+)?delegated\s+tasks|show\s+agent\s+tasks|delegated\s+task\s+status', low):
-        return delegated_status_response()
+    if RAW_DELEGATED_STATUS_RE.search(message or ''):
+        return delegated_status_response(raw=True)
+    if DELEGATED_STATUS_RE.search(message or ''):
+        return delegated_status_response(raw=False)
     if AGENT_EXECUTION_RE.search(message or ''):
         return ('Your Majesty, live delegation execution is not enabled yet.\n\n'
                 'I can prepare a dry-run delegation plan, but I will not execute delegated tasks from live Telegram in this phase.')
@@ -368,7 +368,12 @@ def handle(message: str) -> dict[str, Any]:
         decision = {'route': 'default', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'validated reminder create intent; storage verification required after create'}
         route = 'default'
         tool = None
-    if is_dry_run_delegation_intent(message or ''):
+    if RAW_DELEGATED_STATUS_RE.search(message or '') or DELEGATED_STATUS_RE.search(message or ''):
+        direct = True
+        response = delegated_status_response(raw=bool(RAW_DELEGATED_STATUS_RE.search(message or '')))
+        decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_status', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'storage-backed delegated task ledger status'}
+        tool = 'hermes_agent_delegate_status'
+    elif is_dry_run_delegation_intent(message or ''):
         direct = True
         response = dry_run_delegation_response(message or '')
         decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_dry_run', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'safe dry-run delegation plan'}

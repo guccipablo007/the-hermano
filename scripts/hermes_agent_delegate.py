@@ -11,12 +11,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 BASE = Path("/root/.hermes")
 TASK_DIR = BASE / "agent_tasks"
 REPORT_DIR = TASK_DIR / "reports"
 LEDGER = TASK_DIR / "tasks.jsonl"
 AGENTS_DIR = BASE / "agents"
+CHINA_TZ = ZoneInfo("Asia/Shanghai")
 
 AGENTS = {
     "overseer": {
@@ -438,7 +440,7 @@ def readonly_plan(message: str) -> Dict[str, Any]:
     if "provider" in t or "model" in t:
         return {"allowed": True, "kind": "provider_status", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_provider_status.py", "status", "--format", "friendly"], "contains": "NewCoin", "summary": "Provider/model status checked."}
     if "delegated" in t or "task ledger" in t or "agent tasks" in t:
-        return {"allowed": True, "kind": "delegated_task_status", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_agent_delegate.py", "status", "--limit", "8"], "contains": "assigned_agent", "summary": "Recent delegated task ledger read."}
+        return {"allowed": True, "kind": "delegated_task_status", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_agent_delegate.py", "status", "--format", "friendly", "--limit", "8"], "contains": "Recent delegated tasks", "summary": "Recent delegated task ledger read."}
     if "reminder" in t or "reminders" in t or "alerts" in t:
         return {"allowed": True, "kind": "reminder_lookup", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_reminder_lookup.py", "list", "--format", "friendly"], "contains": "verified", "summary": "Reminder list read from storage."}
     if "latest" in t and "backup" in t:
@@ -466,6 +468,7 @@ def readonly_report(task_id: str, message: str, cls: Dict[str, Any], plan: Dict[
         "model": cls.get("model"),
         "status": status,
         "read_only": True,
+        "read_only_kind": plan.get("kind"),
         "command_or_tool_used": command_label,
         "summary": plan.get("summary") or plan.get("reason") or "Read-only execution blocked or unavailable.",
         "evidence": evidence,
@@ -507,6 +510,20 @@ def execute_readonly(message: str) -> Dict[str, Any]:
 
 def format_readonly_response(result: Dict[str, Any]) -> str:
     report = result["report"]
+    if report.get("read_only_kind") == "delegated_task_status":
+        excerpt = str(report.get("command_output_excerpt") or "").strip()
+        return "\n".join([
+            "READ_ONLY_EXECUTION_REPORT=CREATED",
+            "task_id=" + str(result.get("task_id")),
+            "assigned_agent=" + str(report.get("assigned_agent")),
+            "status=" + str(report.get("status")),
+            "verification_status=" + str(report.get("verification_status")),
+            "summary=" + str(report.get("summary")),
+            "",
+            excerpt,
+            "",
+            "No files, services, reminders, packages, databases, or provider settings were changed.",
+        ]).strip()
     lines = [
         "READ_ONLY_EXECUTION_REPORT=CREATED",
         "task_id=" + str(result.get("task_id")),
@@ -813,7 +830,88 @@ def status(limit: int = 10) -> List[Dict[str, Any]]:
             rows.append(json.loads(line))
         except Exception:
             pass
-    return rows
+    return list(reversed(rows))
+
+
+def friendly_task_time(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.astimezone(CHINA_TZ)
+        hour = dt.strftime("%I").lstrip("0") or "12"
+        return f"{dt.strftime('%B')} {dt.day}, {dt.year}, {hour}:{dt.strftime('%M %p')} China time"
+    except Exception:
+        return mask(raw)
+
+
+def clean_task_summary(row: Dict[str, Any]) -> str:
+    text = str(row.get("user_intent_summary") or row.get("summary") or "Delegated task").strip()
+    text = re.sub(r"^\s*YES,\s*EXECUTE\s+LOW-RISK\s+WRITE\s*:\s*", "", text, flags=re.I)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\b[0-9a-f]{12}\b", "<job_id>", text, flags=re.I)
+    if not text:
+        return "Delegated task"
+    return mask(text[:120])
+
+
+def task_type(row: Dict[str, Any]) -> str:
+    if row.get("write_type") == "task_note":
+        return "low-risk task note"
+    if row.get("write_type") == "reminder_create":
+        return "low-risk reminder create"
+    if row.get("write_type") == "reminder_update":
+        return "low-risk reminder update"
+    if row.get("read_only"):
+        return "read-only check"
+    if row.get("dry_run"):
+        return "dry-run delegation plan"
+    if row.get("low_risk_write"):
+        return "low-risk write"
+    return str(row.get("route") or "delegated task")
+
+
+def status_reason(row: Dict[str, Any]) -> str:
+    verification = str(row.get("verification_status") or row.get("status") or "").strip()
+    if verification == "BLOCKED_RISKY_ACTION":
+        return "Reason: risky action blocked"
+    if verification == "NEEDS_APPROVAL":
+        return "Reason: approval required before writing"
+    if verification == "NOT_EXECUTED_DRY_RUN":
+        return "Reason: dry-run only, no execution"
+    if verification in {"FAILED", "NOT VERIFIED"}:
+        return "Reason: evidence missing or command failed"
+    return ""
+
+
+def format_status_friendly(rows: List[Dict[str, Any]]) -> str:
+    if not rows:
+        return "No delegated tasks found in storage."
+    lines = ["Recent delegated tasks:"]
+    for idx, row in enumerate(rows, 1):
+        verification = str(row.get("verification_status") or row.get("status") or "NOT VERIFIED")
+        lines.append("")
+        lines.append(f"{idx}. {clean_task_summary(row)}")
+        if row.get("assigned_agent"):
+            lines.append(f"   Agent: {mask(row.get('assigned_agent'))}")
+        lines.append(f"   Status: {mask(verification)}")
+        lines.append(f"   Type: {mask(task_type(row))}")
+        t = friendly_task_time(row.get("timestamp"))
+        if t:
+            lines.append(f"   Time: {t}")
+        reason = status_reason(row)
+        if reason:
+            lines.append(f"   {reason}")
+    return "\n".join(lines)
+
+
+def format_status_raw(rows: List[Dict[str, Any]]) -> str:
+    if not rows:
+        return "NO_DELEGATED_TASKS_FOUND"
+    return "\n".join(json.dumps({k: mask(v) for k, v in row.items()}, ensure_ascii=False, sort_keys=True) for row in rows)
 
 
 def print_classification(cls: Dict[str, Any], raw: bool = False) -> None:
@@ -842,6 +940,7 @@ def main() -> int:
     p_del.add_argument("--format", choices=["friendly", "raw"], default="friendly")
     p_status = sub.add_parser("status", help="Show recent delegated task statuses.")
     p_status.add_argument("--limit", type=int, default=10)
+    p_status.add_argument("--format", choices=["friendly", "raw"], default="friendly")
     p_read = sub.add_parser("execute-readonly", help="Execute a permission-gated read-only delegated task.")
     p_read.add_argument("message")
     p_read.add_argument("--format", choices=["friendly", "raw"], default="friendly")
@@ -893,11 +992,10 @@ def main() -> int:
         return 0
     if args.cmd == "status":
         rows = status(args.limit)
-        if not rows:
-            print("NO_DELEGATED_TASKS_FOUND")
-            return 0
-        for row in rows:
-            print(json.dumps({k: mask(v) for k, v in row.items()}, ensure_ascii=False, sort_keys=True))
+        if args.format == "raw":
+            print(format_status_raw(rows))
+        else:
+            print(format_status_friendly(rows))
         return 0
     parser.print_help()
     return 0
