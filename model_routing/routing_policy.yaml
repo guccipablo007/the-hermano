@@ -114,6 +114,18 @@ routes:
     - publish
     - expose credentials
     verification_required: strict
+  general_chat:
+    provider: newcoin
+    model: qwen3-32b
+    fallback_provider: openrouter
+  coding_debugging:
+    provider: newcoin
+    model: doubao-seed-2-0-code-preview-260215
+    fallback_provider: openrouter
+  cheap_simple:
+    provider: newcoin
+    model: qwen3-32b
+    fallback_provider: openrouter
 verification_gate:
   required_for:
   - file creation
@@ -145,3 +157,7 @@ verification_gate:
     - validate syntax
     - restart only required service
     - check service status
+primary_provider: newcoin
+fallback_provider: openrouter
+newcoin_primary_enabled: true
+openrouter_fallback_only: true
