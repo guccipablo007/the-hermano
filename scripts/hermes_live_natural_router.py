@@ -16,6 +16,19 @@ SCRIPTS = Path('/root/.hermes/scripts')
 SECRET_RE = re.compile(r'(Bearer\s+[A-Za-z0-9._:-]+|bot\d+:[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]+|[A-Za-z0-9_-]{24,}\.[A-Za-z0-9._-]+)')
 ROUTE_QUESTION_RE = re.compile(r'\b(which|what)\s+(route|model|provider)\b|\broute\s+will\s+you\s+use\b|\bmodel\s+would\s+you\s+use\b', re.I)
 DEBUG_DETAIL_RE = re.compile(r'```|traceback:|stack trace|\bline\s+\d+\b|\berror:\s*\S+|journalctl|systemctl status|firebase.*(permission-denied|unavailable|error code)', re.I)
+AGENT_PREVIEW_RE = re.compile(
+    r'\b(which|what)\s+agent\b|\bwho\s+(would\s+)?handle(s)?\b|'
+    r'\bwhich\s+part\s+of\s+hermes\s+handles\b|\bagent\s+would\s+handle\b|'
+    r'\bwhat\s+agents\s+do\s+you\s+have\b|\bshow\s+(recent\s+)?delegated\s+tasks\b|'
+    r'\bshow\s+agent\s+tasks\b|\bdelegated\s+task\s+status\b|\blist\s+agents\b|'
+    r'\bwhich\s+agent\s+handles\b',
+    re.I,
+)
+AGENT_EXECUTION_RE = re.compile(
+    r'\b(delegate|agent)\b.*\b(run|execute|start|fix|patch|edit|create|restart|deploy|change)\b|'
+    r'\b(run|execute|start)\b.*\b(agent|delegated\s+task)\b',
+    re.I,
+)
 
 
 def mask(text: str) -> str:
@@ -105,6 +118,89 @@ def should_direct_for_debug(decision: dict[str, Any], message: str) -> bool:
     return not DEBUG_DETAIL_RE.search(message or '')
 
 
+
+def parse_key_values(text: str) -> dict[str, str]:
+    data: dict[str, str] = {}
+    for line in (text or '').splitlines():
+        if '=' in line:
+            k, v = line.split('=', 1)
+            data[k.strip()] = v.strip()
+    return data
+
+
+def agent_list_response() -> str:
+    return (
+        'Your Majesty, Hermes has exactly four agents:\n\n'
+        '- Hermes Overseer / Main Agent\n'
+        '- Apps, Coding & Complex Builds Agent\n'
+        '- Ops & Verification Agent\n'
+        '- Personal/Admin & Tutor Agent\n\n'
+        'No additional specialist agents are enabled.'
+    )
+
+
+def delegated_status_response() -> str:
+    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'status', '--limit', '8'], timeout=45)
+    if rc != 0 or not out.strip():
+        return 'Your Majesty, I could not verify delegated task status from the task ledger.\n\nNOT VERIFIED'
+    if 'NO_DELEGATED_TASKS_FOUND' in out:
+        return 'Your Majesty, there are no delegated tasks recorded yet.'
+    rows = []
+    for line in out.splitlines():
+        try:
+            item = json.loads(line)
+        except Exception:
+            continue
+        task_id = item.get('task_id', 'unknown')
+        agent = item.get('assigned_agent', 'unknown agent')
+        status = item.get('status', 'unknown')
+        verification = item.get('verification_status', 'NOT VERIFIED')
+        route = item.get('route', 'unknown route')
+        rows.append(f'- {task_id}: {agent} ({route}) - {status}, verification: {verification}')
+    if not rows:
+        return 'Your Majesty, I could not verify delegated task status from the task ledger.\n\nNOT VERIFIED'
+    return 'Your Majesty, these are the recent delegated task records from storage:\n\n' + '\n'.join(rows[:8])
+
+
+def agent_preview_response(message: str) -> str:
+    low = (message or '').lower()
+    if re.search(r'what\s+agents\s+do\s+you\s+have|list\s+agents', low):
+        return agent_list_response()
+    if re.search(r'show\s+(recent\s+)?delegated\s+tasks|show\s+agent\s+tasks|delegated\s+task\s+status', low):
+        return delegated_status_response()
+    if AGENT_EXECUTION_RE.search(message or ''):
+        return ('Your Majesty, live delegation execution is not enabled yet.\n\n'
+                'I can prepare a dry-run delegation plan, but I will not execute delegated tasks from live Telegram in this phase.')
+
+    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'classify', message or ''], timeout=45)
+    data = parse_key_values(out)
+    agent = data.get('recommended_agent') or 'NOT VERIFIED'
+    route = data.get('route') or 'NOT VERIFIED'
+    model = data.get('model') or 'NOT VERIFIED'
+    provider = data.get('provider') or 'NewCoin'
+
+    if 'Apps, Coding & Complex Builds Agent' in agent:
+        return (f'Your Majesty, this would be handled by the Apps, Coding & Complex Builds Agent.\n\n'
+                f'Route: coding/debugging\nModel: {provider} {model}\n\n'
+                'Live execution is not enabled yet; I can prepare a dry-run delegation plan.')
+    if 'Ops & Verification Agent' in agent:
+        return (f'Your Majesty, this would be handled by the Ops & Verification Agent.\n\n'
+                f'Route: {route}\n'
+                'It would verify service status, healthchecks, logs, and evidence before reporting.')
+    if 'Personal/Admin & Tutor Agent' in agent:
+        return (f'Your Majesty, reminders and lesson plans belong to the Personal/Admin & Tutor Agent.\n\n'
+                'Reminders stay tool-first and storage-backed. Lesson/admin tasks use the personal/admin/tutor route.')
+    if 'Hermes Overseer' in agent:
+        return (f'Your Majesty, this would stay with the Hermes Overseer / Main Agent.\n\n'
+                f'Route: {route}\nModel: {provider} {model}')
+    return 'Your Majesty, I could not verify the correct agent from the delegation framework.\n\nNOT VERIFIED'
+
+
+def is_agent_preview_intent(message: str) -> bool:
+    text = message or ''
+    return bool(AGENT_PREVIEW_RE.search(text) or AGENT_EXECUTION_RE.search(text))
+
+
 def handle(message: str) -> dict[str, Any]:
     decision = hermes_model_router.classify_message(message or '')
     route = decision.get('route')
@@ -112,7 +208,10 @@ def handle(message: str) -> dict[str, Any]:
     response = ''
     direct = False
 
-    if route == 'tool':
+    if is_agent_preview_intent(message or ''):
+        direct = True
+        response = agent_preview_response(message or '')
+    elif route == 'tool':
         direct = True
         if tool == 'hermes_provider_status':
             _, response = run(['python3', str(SCRIPTS / 'hermes_provider_status.py'), 'status', '--format', 'friendly'], timeout=45)
