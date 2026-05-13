@@ -708,3 +708,31 @@ Routing order:
 5. Use OpenRouter only as fallback if the selected NewCoin route fails.
 
 Future planning only: `/nc code`, `/nc reason`, `/nc cheap`, and `/nc status` may be implemented later. They are not active yet.
+
+## Natural-Language Intent Priority
+
+Natural language is the priority. Slash commands and custom words are optional shortcuts only.
+
+Provider/model status intent examples that must route to provider status:
+- `btw what model are you using?`
+- `by the way, what model are you using?`
+- `quick side question, what provider are you on?`
+- `what model are you using right now?`
+
+Technical debugging intent examples that must route to coding/debugging:
+- `I have a Python traceback`
+- `this Firebase error is confusing`
+- `the gateway crashed`
+- `fix this systemd service issue`
+
+Reasoning intent examples that must route to reasoning/agentic:
+- `why did Hermes hallucinate?`
+- `what is the root cause?`
+- `think through the architecture`
+- `compare these implementation approaches`
+
+Reminder lookup/listing intent examples must route to storage-backed reminder tools first:
+- `show my reminders`
+- `what reminders do I have?`
+- `when is my next class reminder?`
+- `list my scheduled alerts`

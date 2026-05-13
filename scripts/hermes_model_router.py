@@ -22,22 +22,61 @@ FALLBACK_PROVIDER = 'OpenRouter'
 SECRET_RE = re.compile(r'(Bearer\s+[A-Za-z0-9._:-]+|bot\d+:[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]+|[A-Za-z0-9_-]{24,}\.[A-Za-z0-9._-]+)')
 
 TOOL_RULES = [
-    ('/btw', 'hermes_btw_handler', ['^/btw\b']),
-    ('provider-status', 'hermes_provider_status', ['provider.*using', 'model.*using', 'what model', 'what provider', 'provider status']),
-    ('reminder-lookup', 'hermes_reminder_lookup', ['show me all my reminders', 'list my reminders', 'what reminders', 'scheduled reminders', 'next .*reminder', 'when is my next .*reminder', 'reminder lookup']),
-    ('healthcheck', 'hermes_ops_healthcheck', ['healthcheck', 'health check', 'ops health', 'gateway status', 'is hermes healthy']),
+    (
+        'side-question',
+        'hermes_btw_handler',
+        [
+            r'^/btw\b',
+            r'\bbtw\b',
+            r'\bby the way\b',
+            r'\bquick side question\b',
+            r'\bside question\b',
+        ],
+    ),
+    (
+        'provider-status',
+        'hermes_provider_status',
+        [
+            r'\bwhat\s+(model|provider)\b.*\b(using|on|current|right now|now)\b',
+            r'\b(model|provider)\b.*\b(status|using|current|right now|now)\b',
+            r'\bwhich\s+(model|provider)\b',
+            r'\bprovider\s+status\b',
+            r'\bmodel\s+status\b',
+        ],
+    ),
+    (
+        'reminder-lookup',
+        'hermes_reminder_lookup',
+        [
+            r'\bshow\s+(me\s+)?(all\s+)?my\s+(reminders|alerts)\b',
+            r'\blist\s+(my\s+)?(scheduled\s+)?(reminders|alerts)\b',
+            r'\bwhat\s+(reminders|alerts)\s+do\s+i\s+have\b',
+            r'\bscheduled\s+(reminders|alerts)\b',
+            r'\bwhen\s+is\s+my\s+next\b.*\b(reminder|alert)\b',
+            r'\bnext\b.*\b(reminder|alert)\b',
+            r'\breminder\s+lookup\b',
+        ],
+    ),
+    (
+        'healthcheck',
+        'hermes_ops_healthcheck',
+        [
+            r'\bhealthcheck\b', r'\bhealth check\b', r'\bops health\b',
+            r'\bgateway status\b', r'\bis hermes healthy\b',
+        ],
+    ),
 ]
 
 CODING_KEYWORDS = [
     'traceback', 'stack trace', 'exception', 'python', 'bash', 'shell', 'systemd', 'journalctl', 'logs', 'log output',
     'file path', '/root/', '/usr/local/', 'config.yaml', '.py', '.sh', '.js', '.ts', '.tsx', '.json', '.yaml', '.yml',
-    'gateway', 'router', 'script', 'function', 'class ', 'code block', 'debug this code', 'fix this code', 'implement',
-    'database', 'firebase', 'firestore', 'sql', 'postgres', 'mysql', 'redis', 'docker', 'nginx', 'api error', 'http 500',
+    'gateway', 'gateway crashed', 'crashed', 'router', 'script', 'function', 'class ', 'code block', 'debug this code', 'fix this code', 'implement',
+    'database', 'firebase', 'firebase error', 'firestore', 'sql', 'postgres', 'mysql', 'redis', 'docker', 'nginx', 'api error', 'http 500',
     'app bug', 'frontend', 'backend', 'deployment', 'cronjob_tools.py', 'scheduler.py', 'run.py', 'write code', 'edit file',
 ]
 
 REASONING_KEYWORDS = [
-    'why did', 'root cause', 'root-cause', 'what caused', 'diagnose', 'architecture', 'architect', 'planning', 'plan ',
+    'why did', 'root cause', 'what is the root cause', 'root-cause', 'what caused', 'diagnose', 'architecture', 'architect', 'think through the architecture', 'compare these implementation approaches', 'planning', 'plan ',
     'multi-step', 'troubleshoot', 'troubleshooting', 'task decomposition', 'decompose', 'strategy', 'decision',
     'agent behavior', 'workflow design', 'system design', 'failure analysis', 'investigate', 'tradeoff', 'design a',
 ]
@@ -109,6 +148,19 @@ def classify_message(message: str) -> dict[str, Any]:
             'reason': 'verified tool/script route matched before model guessing',
             'fallback_provider': FALLBACK_PROVIDER,
         }
+    strong_reasoning = [
+        'why did', 'root cause', 'what is the root cause', 'think through the architecture',
+        'compare these implementation approaches', 'compare approaches', 'tradeoff', 'strategy',
+        'architecture planning', 'task decomposition', 'agent behavior design', 'system design',
+    ]
+    if contains_any(low, strong_reasoning) or (contains_any(low, REASONING_KEYWORDS) and not re.search(r'```|traceback|stack trace|systemd|journalctl|\.py|\.sh|\bfix\b.*\b(code|error|bug|service)\b', low)):
+        return {
+            'route': 'reasoning',
+            'provider': PROVIDER,
+            'model': models['reasoning'],
+            'reason': 'natural-language analysis/planning/root-cause intent matched',
+            'fallback_provider': FALLBACK_PROVIDER,
+        }
     if contains_any(low, CODING_KEYWORDS) or re.search(r'```|\b(error|failed|failure)\b.*\b(line|trace|log|code)\b', low):
         return {
             'route': 'coding',
@@ -117,14 +169,6 @@ def classify_message(message: str) -> dict[str, Any]:
             'reason': 'coding/debugging signals matched',
             'fallback_provider': FALLBACK_PROVIDER,
             'fallback_order': fallbacks()[0]['coding_order'],
-        }
-    if contains_any(low, REASONING_KEYWORDS):
-        return {
-            'route': 'reasoning',
-            'provider': PROVIDER,
-            'model': models['reasoning'],
-            'reason': 'multi-step reasoning/root-cause/planning signals matched',
-            'fallback_provider': FALLBACK_PROVIDER,
         }
     return {
         'route': 'default',
@@ -183,12 +227,21 @@ def self_test(fmt: str) -> int:
         ('simple', 'write a short message to Mr Wang', 'default', DEFAULT_MODEL),
         ('simple_chat', 'tell me what CST means for me', 'default', DEFAULT_MODEL),
         ('reasoning', 'why did the reminder system hallucinate?', 'reasoning', REASONING_MODEL),
-        ('architecture', 'make an architecture plan for safer routing', 'reasoning', REASONING_MODEL),
-        ('traceback', 'fix this Python traceback: ValueError on line 12', 'coding', CODING_MODEL),
-        ('systemd', 'debug these Linux systemd logs from hermes-gateway.service', 'coding', CODING_MODEL),
-        ('app_db', 'fix my Firebase database app bug', 'coding', CODING_MODEL),
-        ('reminder_tool', 'show me all my reminders', 'tool', DEFAULT_MODEL),
+        ('root_cause_natural', 'what is the root cause?', 'reasoning', REASONING_MODEL),
+        ('architecture', 'think through the architecture', 'reasoning', REASONING_MODEL),
+        ('compare_approaches', 'compare these implementation approaches', 'reasoning', REASONING_MODEL),
+        ('traceback', 'I have a Python traceback', 'coding', CODING_MODEL),
+        ('systemd', 'fix this systemd service issue', 'coding', CODING_MODEL),
+        ('gateway_crash', 'the gateway crashed', 'coding', CODING_MODEL),
+        ('app_db', 'this Firebase error is confusing', 'coding', CODING_MODEL),
+        ('reminder_tool', 'show my reminders', 'tool', DEFAULT_MODEL),
+        ('reminders_natural', 'what reminders do I have?', 'tool', DEFAULT_MODEL),
+        ('class_reminder_natural', 'when is my next class reminder?', 'tool', DEFAULT_MODEL),
+        ('alerts_natural', 'list my scheduled alerts', 'tool', DEFAULT_MODEL),
         ('btw_tool', '/btw what provider are you using now?', 'tool', DEFAULT_MODEL),
+        ('btw_natural', 'by the way, what model are you using?', 'tool', DEFAULT_MODEL),
+        ('side_question_provider', 'quick side question, what provider are you on?', 'tool', DEFAULT_MODEL),
+        ('provider_direct', 'what model are you using right now?', 'tool', DEFAULT_MODEL),
     ]
     ok = True
     results = []

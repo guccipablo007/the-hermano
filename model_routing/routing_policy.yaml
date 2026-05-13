@@ -236,3 +236,28 @@ task_aware_model_router:
     - /nc reason <task>
     - /nc cheap <task>
     - /nc status
+  natural_language_priority: true
+  command_shortcuts_optional: true
+  principle: Natural-language intent is the priority. Slash commands and custom words
+    are optional shortcuts only.
+  natural_language_examples:
+    provider_status:
+    - btw what model are you using?
+    - by the way, what model are you using?
+    - quick side question, what provider are you on?
+    - what model are you using right now?
+    coding_debugging:
+    - I have a Python traceback
+    - this Firebase error is confusing
+    - the gateway crashed
+    - fix this systemd service issue
+    reasoning_agentic:
+    - why did Hermes hallucinate?
+    - what is the root cause?
+    - think through the architecture
+    - compare these implementation approaches
+    reminder_tools:
+    - show my reminders
+    - what reminders do I have?
+    - when is my next class reminder?
+    - list my scheduled alerts
