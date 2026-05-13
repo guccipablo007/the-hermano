@@ -412,6 +412,18 @@ BLOCKED_RISKY_PATTERNS = [
     r"\binstall\b", r"\bdeploy\b", r"\bmigrate\b", r"\bdatabase\s+write\b", r"\bconfigure\b",
 ]
 
+LOW_RISK_APPROVAL_PHRASE = "YES, EXECUTE LOW-RISK WRITE"
+LOW_RISK_BLOCKED_PATTERNS = [
+    r"\brestart\b", r"\bfix\b", r"\bpatch\b", r"\bedit\b", r"\bdelete\b", r"\bremove\b",
+    r"\binstall\b", r"\bdeploy\b", r"\bmigrate\b", r"\bdatabase\b", r"\bconfigure\b",
+    r"\bconfig\.yaml\b", r"\bmodel\s+routing\b", r"\bprovider\s+routing\b",
+    r"\bgmail\b", r"\byoutube\b", r"\bcredential\b", r"\btoken\b", r"\bsecret\b",
+]
+REMINDER_CREATE_RE = re.compile(r"\b(remind\s+me|set\s+a\s+reminder|create\s+a\s+reminder)\b", re.I)
+REMINDER_UPDATE_RE = re.compile(r"\bupdate\b.*\breminder\b|\breminder\b.*\bupdate\b", re.I)
+REMINDER_DELETE_RE = re.compile(r"\b(delete|remove|cancel)\b.*\b(reminder|alert)\b|\b(reminder|alert)\b.*\b(delete|remove|cancel)\b", re.I)
+TASK_NOTE_RE = re.compile(r"\b(create|save|add)\b.*\b(task\s+note|agent\s+note|task\s+report|note/report|report)\b", re.I)
+
 
 def readonly_plan(message: str) -> Dict[str, Any]:
     t = (message or "").lower()
@@ -513,6 +525,285 @@ def format_readonly_response(result: Dict[str, Any]) -> str:
     lines.append("actions_not_taken=" + "; ".join(map(str, report.get("actions_not_taken") or [])))
     return "\n".join(lines)
 
+
+def reminder_guard_json(message: str) -> Dict[str, Any]:
+    proc = run_cmd(["/usr/bin/python3", "/root/.hermes/scripts/hermes_reminder_intent_guard.py", message or "", "--format", "json"], timeout=60)
+    if not proc.get("ok"):
+        return {"applies": False, "create_allowed": False, "direct_response": False, "category": "guard_failed", "response": proc.get("stderr") or proc.get("stdout")}
+    try:
+        data = json.loads(proc.get("stdout") or "{}")
+        return data if isinstance(data, dict) else {"applies": False, "create_allowed": False, "category": "guard_bad_json"}
+    except Exception:
+        return {"applies": False, "create_allowed": False, "category": "guard_parse_failed"}
+
+
+def low_risk_block_reason(message: str) -> str | None:
+    text = message or ""
+    low = text.lower()
+    if REMINDER_DELETE_RE.search(text):
+        return "Reminder deletion is not allowed in this phase."
+    for pat in LOW_RISK_BLOCKED_PATTERNS:
+        if re.search(pat, low):
+            # Reminder creation and approved task-note writes are handled by narrow allow-list paths below.
+            if REMINDER_CREATE_RE.search(text) and not re.search(r"\b(delete|remove|cancel)\b", low):
+                continue
+            if TASK_NOTE_RE.search(text) and not any(x in low for x in ["config", "code", "provider", "model routing", "credential", "token", "secret"]):
+                continue
+            return "Request is outside the low-risk write allow-list."
+    return None
+
+
+def parse_reminder_create(message: str) -> Dict[str, str] | None:
+    text = re.sub(r"^\s*YES,\s*EXECUTE\s+LOW-RISK\s+WRITE\s*:\s*", "", message or "", flags=re.I).strip()
+    m = re.search(r"\bremind\s+me\s+(.+?)\s+to\s+(.+)$", text, re.I)
+    if not m:
+        m = re.search(r"\b(?:set|create)\s+a\s+reminder\s+(.+?)\s+to\s+(.+)$", text, re.I)
+    if not m:
+        return None
+    schedule = m.group(1).strip()
+    task = m.group(2).strip().rstrip(".")
+    if not schedule or not task:
+        return None
+    return {
+        "schedule": schedule,
+        "task": task,
+        "name": f"Reminder: {task[:80]}",
+        "prompt": f"Reminder: {task}",
+    }
+
+
+def create_verified_reminder(message: str) -> Dict[str, Any]:
+    guard = reminder_guard_json(message)
+    if not guard.get("create_allowed"):
+        return {
+            "status": "blocked",
+            "verification_status": "NOT VERIFIED",
+            "write_type": "reminder_create",
+            "summary": str(guard.get("response") or "Reminder request is missing required task/date/time details."),
+            "evidence": [{"type": "reminder_intent_guard", "category": guard.get("category"), "create_allowed": False}],
+        }
+    parsed = parse_reminder_create(message)
+    if not parsed:
+        return {
+            "status": "blocked",
+            "verification_status": "NOT VERIFIED",
+            "write_type": "reminder_create",
+            "summary": "Could not deterministically extract reminder schedule and task.",
+            "evidence": [{"type": "reminder_intent_guard", "category": guard.get("category"), "create_allowed": True}],
+        }
+    try:
+        sys.path.insert(0, "/usr/local/lib/hermes-agent")
+        from tools.cronjob_tools import cronjob  # type: ignore
+
+        raw = cronjob(
+            action="create",
+            prompt=parsed["prompt"],
+            schedule=parsed["schedule"],
+            name=parsed["name"],
+            deliver="local",
+        )
+        data = json.loads(raw)
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "verification_status": "FAILED",
+            "write_type": "reminder_create",
+            "summary": f"Reminder create tool failed: {type(exc).__name__}",
+            "evidence": [{"type": "exception", "detail": mask(exc)}],
+        }
+    job = data.get("job") or {}
+    verified = bool(data.get("success") and data.get("verified") and job.get("job_id") and job.get("next_run_at"))
+    return {
+        "status": "completed" if verified else "failed",
+        "verification_status": "VERIFIED" if verified else "NOT VERIFIED",
+        "write_type": "reminder_create",
+        "summary": "Reminder created through the verified cronjob flow." if verified else "Reminder creation was not verified from storage.",
+        "reminder_job_id": job.get("job_id"),
+        "next_run_at": job.get("next_run_at"),
+        "evidence": [{"type": "cronjob_create", "success": data.get("success"), "verified": data.get("verified"), "job_id": job.get("job_id"), "next_run_at": job.get("next_run_at")}],
+    }
+
+
+def parse_reminder_update(message: str) -> Dict[str, str] | None:
+    text = re.sub(r"^\s*YES,\s*EXECUTE\s+LOW-RISK\s+WRITE\s*:\s*", "", message or "", flags=re.I).strip()
+    job_match = re.search(r"\b([0-9a-f]{12})\b", text, re.I)
+    sched_match = re.search(r"\bto\s+(.+)$", text, re.I)
+    if not job_match or not sched_match:
+        return None
+    schedule = sched_match.group(1).strip().rstrip(".")
+    if not schedule:
+        return None
+    return {"job_id": job_match.group(1).lower(), "schedule": schedule}
+
+
+def update_verified_reminder(message: str) -> Dict[str, Any]:
+    parsed = parse_reminder_update(message)
+    if not parsed:
+        return {
+            "status": "blocked",
+            "verification_status": "NOT VERIFIED",
+            "write_type": "reminder_update",
+            "summary": "Reminder update requires an explicit existing job ID and a new schedule.",
+            "evidence": [{"type": "update_validation", "job_id_present": False}],
+        }
+    try:
+        sys.path.insert(0, "/usr/local/lib/hermes-agent")
+        from tools.cronjob_tools import cronjob  # type: ignore
+
+        raw = cronjob(action="update", job_id=parsed["job_id"], schedule=parsed["schedule"])
+        data = json.loads(raw)
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "verification_status": "FAILED",
+            "write_type": "reminder_update",
+            "summary": f"Reminder update tool failed: {type(exc).__name__}",
+            "evidence": [{"type": "exception", "detail": mask(exc)}],
+        }
+    job = data.get("job") or {}
+    verified = bool(data.get("success") and data.get("verified") and job.get("job_id") and job.get("next_run_at"))
+    return {
+        "status": "completed" if verified else "failed",
+        "verification_status": "VERIFIED" if verified else "NOT VERIFIED",
+        "write_type": "reminder_update",
+        "summary": "Reminder updated through the verified cronjob flow." if verified else "Reminder update was not verified from storage.",
+        "reminder_job_id": job.get("job_id") or parsed["job_id"],
+        "next_run_at": job.get("next_run_at"),
+        "evidence": [{"type": "cronjob_update", "success": data.get("success"), "verified": data.get("verified"), "job_id": job.get("job_id") or parsed["job_id"], "next_run_at": job.get("next_run_at")}],
+    }
+
+
+def task_note_body(message: str, task_id: str, cls: Dict[str, Any]) -> Dict[str, Any]:
+    clean = re.sub(r"^\s*YES,\s*EXECUTE\s+LOW-RISK\s+WRITE\s*:\s*", "", message or "", flags=re.I).strip()
+    return {
+        "TASK_NOTE": True,
+        "task_id": task_id,
+        "timestamp": now_iso(),
+        "summary": mask(clean[:500]),
+        "assigned_agent": cls["recommended_agent"],
+        "route": cls.get("route"),
+        "provider": cls.get("provider"),
+        "model": cls.get("model"),
+        "non_sensitive": True,
+        "actions_taken": ["Created a non-sensitive task note under the approved Hermes agent_tasks/reports directory."],
+        "actions_not_taken": ["No code/config edited.", "No services restarted.", "No packages installed.", "No provider/model routing changed.", "No reminders changed."],
+    }
+
+
+def low_risk_write_action(message: str, cls: Dict[str, Any], task_id: str) -> Dict[str, Any]:
+    block_reason = low_risk_block_reason(message)
+    if block_reason:
+        return {"status": "blocked", "verification_status": "BLOCKED_RISKY_ACTION", "write_type": "blocked", "summary": block_reason, "evidence": []}
+    if REMINDER_DELETE_RE.search(message or ""):
+        return {"status": "blocked", "verification_status": "BLOCKED_RISKY_ACTION", "write_type": "reminder_delete", "summary": "Reminder deletion is blocked in this phase.", "evidence": []}
+    if REMINDER_UPDATE_RE.search(message or ""):
+        return update_verified_reminder(message)
+    if REMINDER_CREATE_RE.search(message or ""):
+        return create_verified_reminder(message)
+    if TASK_NOTE_RE.search(message or ""):
+        approved = (message or "").strip().upper().startswith(LOW_RISK_APPROVAL_PHRASE)
+        if not approved:
+            return {
+                "status": "needs_approval",
+                "verification_status": "NEEDS_APPROVAL",
+                "write_type": "task_note",
+                "summary": "Can create a non-sensitive task note under /root/.hermes/agent_tasks/reports only after exact approval.",
+                "evidence": [{"type": "approval_required", "phrase": LOW_RISK_APPROVAL_PHRASE}],
+            }
+        note = task_note_body(message, task_id, cls)
+        note_path = write_report(f"{task_id}_note", note)
+        ok = note_path.exists() and note_path.stat().st_size > 0 and str(note_path).startswith(str(REPORT_DIR))
+        return {
+            "status": "completed" if ok else "failed",
+            "verification_status": "VERIFIED" if ok else "NOT VERIFIED",
+            "write_type": "task_note",
+            "summary": "Non-sensitive task note written to approved Hermes report storage." if ok else "Task note write could not be verified.",
+            "files_written": [str(note_path)] if ok else [],
+            "evidence": [{"type": "file_exists", "path": str(note_path), "size": note_path.stat().st_size if note_path.exists() else 0}],
+        }
+    return {"status": "blocked", "verification_status": "NOT VERIFIED", "write_type": "unknown", "summary": "Request is not an approved low-risk write action.", "evidence": []}
+
+
+def low_risk_write_report(task_id: str, message: str, cls: Dict[str, Any], action: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "LOW_RISK_WRITE_REPORT": True,
+        "TASK_REPORT": True,
+        "task_id": task_id,
+        "assigned_agent": cls["recommended_agent"],
+        "agent": cls["recommended_agent"],
+        "route": cls.get("route"),
+        "provider": cls.get("provider"),
+        "model": cls.get("model"),
+        "status": action.get("status"),
+        "write_type": action.get("write_type"),
+        "approved_by_user": bool((message or "").strip().upper().startswith(LOW_RISK_APPROVAL_PHRASE)),
+        "approval_phrase_seen": LOW_RISK_APPROVAL_PHRASE if (message or "").strip().upper().startswith(LOW_RISK_APPROVAL_PHRASE) else "",
+        "files_written": action.get("files_written", []),
+        "reminder_job_id": action.get("reminder_job_id"),
+        "next_run_at": action.get("next_run_at"),
+        "verification_status": action.get("verification_status", "NOT VERIFIED"),
+        "evidence": action.get("evidence", []),
+        "summary": action.get("summary"),
+        "actions_not_taken": ["No Hermes source/config edits.", "No service restarts.", "No package installs.", "No database writes.", "No provider/model routing changes.", "No Gmail/YouTube actions.", "No arbitrary shell execution.", "No reminder deletion."],
+        "risks_or_warnings": ["Low-risk write allow-list enforced.", "Task notes require exact approval phrase.", "Reminder writes must pass the existing reminder validation and storage verification flow."],
+        "verification_recommendation": "Return VERIFIED only when evidence is present.",
+        "final_answer_suggestion": "Report concise evidence; ask for missing information or approval when required.",
+    }
+
+
+def execute_low_risk_write(message: str) -> Dict[str, Any]:
+    ensure_dirs()
+    cls = classify(message)
+    task_id = task_id_for("low-risk-write:" + message)
+    action = low_risk_write_action(message, cls, task_id)
+    report = low_risk_write_report(task_id, message, cls, action)
+    path = write_report(task_id, report)
+    record = {
+        "task_id": task_id,
+        "timestamp": now_iso(),
+        "user_intent_summary": mask((message or "")[:240]),
+        "assigned_agent": cls["recommended_agent"],
+        "route": cls.get("route"),
+        "provider": cls.get("provider"),
+        "model": cls.get("model"),
+        "status": report["status"],
+        "risk_level": "low" if report["verification_status"] in {"VERIFIED", "NEEDS_APPROVAL", "NOT VERIFIED"} else "blocked",
+        "low_risk_write": True,
+        "write_type": report.get("write_type"),
+        "evidence_required": True,
+        "report_path": str(path),
+        "verification_status": report["verification_status"],
+    }
+    write_ledger(record)
+    return {"task_id": task_id, "classification": cls, "report_path": str(path), "report": report}
+
+
+def format_low_risk_write_response(result: Dict[str, Any]) -> str:
+    report = result["report"]
+    lines = [
+        "LOW_RISK_WRITE_REPORT=CREATED",
+        "task_id=" + str(result.get("task_id")),
+        "assigned_agent=" + str(report.get("assigned_agent")),
+        "route=" + str(report.get("route")),
+        "provider=" + str(report.get("provider")),
+        "model=" + str(report.get("model")),
+        "status=" + str(report.get("status")),
+        "write_type=" + str(report.get("write_type")),
+        "approved_by_user=" + str(report.get("approved_by_user")).lower(),
+        "verification_status=" + str(report.get("verification_status")),
+        "summary=" + str(report.get("summary")),
+    ]
+    if report.get("files_written"):
+        lines.append("files_written=" + "; ".join(map(str, report.get("files_written") or [])))
+    if report.get("reminder_job_id"):
+        lines.append("reminder_job_id=" + str(report.get("reminder_job_id")))
+    if report.get("next_run_at"):
+        lines.append("next_run_at=" + str(report.get("next_run_at")))
+    if report.get("evidence"):
+        lines.append("evidence=" + mask(json.dumps(report.get("evidence"), ensure_ascii=False))[:1200])
+    lines.append("actions_not_taken=" + "; ".join(map(str, report.get("actions_not_taken") or [])))
+    return "\n".join(lines)
+
 def status(limit: int = 10) -> List[Dict[str, Any]]:
     if not LEDGER.exists():
         return []
@@ -554,6 +845,9 @@ def main() -> int:
     p_read = sub.add_parser("execute-readonly", help="Execute a permission-gated read-only delegated task.")
     p_read.add_argument("message")
     p_read.add_argument("--format", choices=["friendly", "raw"], default="friendly")
+    p_low = sub.add_parser("execute-low-risk-write", help="Execute a permission-gated low-risk write task.")
+    p_low.add_argument("message")
+    p_low.add_argument("--format", choices=["friendly", "raw"], default="friendly")
     args = parser.parse_args()
 
     if args.cmd == "classify":
@@ -589,6 +883,13 @@ def main() -> int:
             print(json.dumps(result, indent=2, ensure_ascii=False))
         else:
             print(format_readonly_response(result))
+        return 0
+    if args.cmd == "execute-low-risk-write":
+        result = execute_low_risk_write(args.message)
+        if args.format == "raw":
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            print(format_low_risk_write_response(result))
         return 0
     if args.cmd == "status":
         rows = status(args.limit)

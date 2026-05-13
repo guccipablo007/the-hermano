@@ -47,6 +47,11 @@ READONLY_EXECUTION_RE = re.compile(
     r'\bverify\s+latest\s+git\s+backup\b',
     re.I,
 )
+LOW_RISK_WRITE_RE = re.compile(
+    r'^\s*YES,\s*EXECUTE\s+LOW-RISK\s+WRITE\s*:|'
+    r'\b(create|save|add)\b.*\b(task\s+note|agent\s+note|task\s+report|note/report|report)\b',
+    re.I,
+)
 RISKY_LIVE_EXECUTION_RE = re.compile(
     r'\b(restart|fix|patch|edit|write|delete|install|deploy|migrate|configure)\b|'
     r'\b(create|update|delete)\b.*\b(reminder|database|file|service)\b',
@@ -188,6 +193,42 @@ def readonly_execution_response(message: str) -> str:
 
 def is_readonly_execution_intent(message: str) -> bool:
     return bool(READONLY_EXECUTION_RE.search(message or ''))
+
+
+def low_risk_write_response(message: str) -> str:
+    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'execute-low-risk-write', message or ''], timeout=120)
+    data = parse_delegate_output(out)
+    if rc != 0 or not data:
+        return 'Your Majesty, I could not verify the low-risk write request.\n\nNOT VERIFIED'
+    status = data.get('verification_status', 'NOT VERIFIED')
+    if status == 'NEEDS_APPROVAL':
+        return ('Your Majesty, I can create a non-sensitive task note under Hermes agent_tasks/reports.\n\n'
+                'No code/config files, services, reminders, packages, provider settings, or databases will be changed.\n\n'
+                'Reply exactly:\nYES, EXECUTE LOW-RISK WRITE')
+    if status == 'BLOCKED_RISKY_ACTION':
+        return ('Your Majesty, that write action is blocked as risky.\n\n'
+                'I did not execute it. I can prepare a dry-run plan instead.')
+    if status == 'VERIFIED':
+        parts = [
+            'Your Majesty, the low-risk write is verified.',
+            '',
+            f"Type: {data.get('write_type', 'low-risk write')}",
+            f"Task ID: {data.get('task_id', 'NOT VERIFIED')}",
+        ]
+        if data.get('files_written'):
+            parts.append('Evidence: approved report file exists.')
+        if data.get('reminder_job_id'):
+            parts.append(f"Reminder job: {data.get('reminder_job_id')}")
+        if data.get('next_run_at'):
+            parts.append(f"Next run: {data.get('next_run_at')}")
+        parts.append('No code/config files, services, provider settings, packages, databases, or destructive actions were changed.')
+        return '\n'.join(parts)
+    summary = data.get('summary') or 'The low-risk write was not verified.'
+    return f'Your Majesty, {summary}\n\nNOT VERIFIED'
+
+
+def is_low_risk_write_intent(message: str) -> bool:
+    return bool(LOW_RISK_WRITE_RE.search(message or ''))
 
 def dry_run_delegation_response(message: str) -> str:
     rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'delegate', message or '', '--dry-run'], timeout=60)
@@ -332,6 +373,11 @@ def handle(message: str) -> dict[str, Any]:
         response = dry_run_delegation_response(message or '')
         decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_dry_run', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'safe dry-run delegation plan'}
         tool = 'hermes_agent_delegate_dry_run'
+    elif is_low_risk_write_intent(message or ''):
+        direct = True
+        response = low_risk_write_response(message or '')
+        decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_execute_low_risk_write', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'permission-gated low-risk write'}
+        tool = 'hermes_agent_delegate_execute_low_risk_write'
     elif is_readonly_execution_intent(message or ''):
         direct = True
         response = readonly_execution_response(message or '')
