@@ -969,6 +969,27 @@ import weakref as _weakref
 _gateway_runner_ref: _weakref.ref = lambda: None
 
 
+
+def _sanitize_user_visible_response(text: str) -> str:
+    # Remove raw internal tool/debug leakage from normal platform replies.
+    if not text:
+        return text
+    cleaned = str(text)
+    cleaned = re.sub(r"123321.*?call_[A-Za-z0-9_-]+\s*->\s*\{.*?\}(?=\s*Your Majesty|\s*$)", "", cleaned, flags=re.S)
+    cleaned = re.sub(r"call_[A-Za-z0-9_-]+\s*->\s*\{.*?\}(?=\s*Your Majesty|\s*$)", "", cleaned, flags=re.S)
+    cleaned = re.sub(r"cronjob\s*\(\s*\[.*?\]\s*\)", "", cleaned, flags=re.S | re.I)
+    cleaned = re.sub(r"cronjob\s*\([^\n]*(?:action|job_id|schedule)[^\n]*\)", "", cleaned, flags=re.S | re.I)
+    cleaned = re.sub(r"```json\s*\{\s*\"success\"\s*:\s*(?:true|false).*?```", "", cleaned, flags=re.S | re.I)
+    cleaned = re.sub(r"\{\s*\"success\"\s*:\s*(?:true|false).*?\}", "", cleaned, flags=re.S | re.I)
+    cleaned = re.sub(r"\bcall_[A-Za-z0-9_-]+\b", "<tool_masked>", cleaned)
+    cleaned = re.sub(r"(telegram:)-?\d+", r"\1<chat_id_masked>", cleaned)
+    cleaned = re.sub(r"(ID:\s*)`?-?\d+`?", r"\1<chat_id_masked>", cleaned)
+    cleaned = re.sub(r"bot\d+:[A-Za-z0-9_-]+", "bot<REDACTED>", cleaned)
+    cleaned = re.sub(r"Bearer\s+[A-Za-z0-9._-]+", "Bearer <REDACTED>", cleaned)
+    cleaned = re.sub(r"(?i)(api[_-]?key\s*[:=]\s*)[A-Za-z0-9._-]+", r"\1<REDACTED>", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned or "NOT VERIFIED\nREASON=RESPONSE_SANITIZED_TO_EMPTY"
+
 def _normalize_empty_agent_response(
     agent_result: dict,
     response: str,
@@ -5077,6 +5098,131 @@ class GatewayRunner:
             # clearly moved on.
             _slash_confirm_mod.clear_if_stale(_quick_key)
 
+
+        # Hermes live natural-language router: tool-first and route-preview gate.
+        # Natural-language intent is preferred over brittle slash commands.
+        try:
+            _lnr_text = (event.text or "").strip()
+            _lnr_is_telegram = getattr(source.platform, "value", None) == "telegram"
+            if _lnr_is_telegram and _lnr_text:
+                import json as _lnr_json
+                import subprocess as _lnr_subprocess
+                _lnr_proc = await asyncio.to_thread(
+                    _lnr_subprocess.run,
+                    ["/usr/bin/python3", "/root/.hermes/scripts/hermes_live_natural_router.py", _lnr_text, "--format", "json"],
+                    text=True,
+                    capture_output=True,
+                    timeout=90,
+                )
+                _lnr_payload = (_lnr_proc.stdout or "").strip()
+                if _lnr_payload:
+                    _lnr_data = _lnr_json.loads(_lnr_payload)
+                    if _lnr_data.get("direct_response"):
+                        _lnr_response = (_lnr_data.get("response") or "").strip()
+                        if not _lnr_response:
+                            _lnr_response = "NOT VERIFIED\nREASON=LIVE_ROUTER_EMPTY_RESPONSE"
+                        _lnr_adapter = self.adapters.get(source.platform)
+                        if _lnr_adapter:
+                            await _lnr_adapter.send(source.chat_id, _lnr_response)
+                        return None
+        except Exception as _lnr_exc:
+            logger.warning("Telegram live natural-language router failed: %s", _lnr_exc, exc_info=True)
+            try:
+                _lnr_adapter = self.adapters.get(source.platform)
+                if _lnr_adapter and getattr(source.platform, "value", None) == "telegram":
+                    await _lnr_adapter.send(
+                        source.chat_id,
+                        f"NOT VERIFIED\nREASON=LIVE_NATURAL_ROUTER_EXCEPTION:{type(_lnr_exc).__name__}",
+                    )
+                    return None
+            except Exception:
+                logger.warning("Failed to send live natural-router failure notice", exc_info=True)
+
+        # Hermes /btw side-question pre-router: read-only side question before
+        # artifact/generic routing, so it does not derail the active workflow.
+        try:
+            _btw_text = (event.text or "").strip()
+            if _btw_text.lower().startswith("/btw") and getattr(source.platform, "value", None) == "telegram":
+                import sys as _btw_sys
+                _btw_sys.path.insert(0, "/root/.hermes/scripts")
+                from hermes_btw_handler import handle as _handle_btw
+
+                _btw_result = await asyncio.to_thread(_handle_btw, _btw_text)
+                _btw_adapter = self.adapters.get(source.platform)
+                if _btw_adapter:
+                    await _btw_adapter.send(source.chat_id, _btw_result)
+                return None
+        except Exception as _btw_exc:
+            logger.warning("Telegram /btw side-question handler failed: %s", _btw_exc, exc_info=True)
+            try:
+                _btw_adapter = self.adapters.get(source.platform)
+                if _btw_adapter and getattr(source.platform, "value", None) == "telegram":
+                    await _btw_adapter.send(
+                        source.chat_id,
+                        f"NOT VERIFIED\nREASON=BTW_HANDLER_EXCEPTION:{type(_btw_exc).__name__}",
+                    )
+                    return None
+            except Exception:
+                logger.warning("Failed to send /btw failure notice", exc_info=True)
+
+
+        # Hermes reminder lookup pre-router: read-only lookup before generic routing.
+        # This prevents the model from guessing reminder times from stale memory.
+        try:
+            _rem_lookup_text = (event.text or "").strip()
+            _rem_lookup_l = _rem_lookup_text.lower()
+            _is_telegram = getattr(source.platform, "value", None) == "telegram"
+            _lookup_mode = None
+            _lookup_query = ""
+            if _is_telegram and _rem_lookup_text:
+                import re as _rem_lookup_re
+                _m_next = _rem_lookup_re.search(r"^when\s+is\s+(?:my\s+)?next\s+(.+?)\s+reminder\??$", _rem_lookup_text, _rem_lookup_re.I)
+                if _m_next:
+                    _lookup_mode = "next"
+                    _lookup_query = _m_next.group(1).strip()
+                elif (
+                    _rem_lookup_re.search(r"\b(?:show|list)\b.*\breminders\??$", _rem_lookup_text, _rem_lookup_re.I)
+                    or _rem_lookup_re.search(r"^what\s+reminders\s+(?:do\s+i\s+have|are\s+active)\??$", _rem_lookup_text, _rem_lookup_re.I)
+                    or _rem_lookup_re.search(r"^show\s+all\s+scheduled\s+reminders\??$", _rem_lookup_text, _rem_lookup_re.I)
+                ):
+                    _lookup_mode = "list"
+                elif _rem_lookup_re.search(r"^(?:what|when)\s+.*next\s+reminder\??$", _rem_lookup_text, _rem_lookup_re.I):
+                    _lookup_mode = "next"
+                    _lookup_query = _rem_lookup_re.sub(r"reminder", "", _rem_lookup_l).strip()
+
+            if _lookup_mode:
+                import subprocess as _rem_lookup_subprocess
+                _cmd = ["/usr/bin/python3", "/root/.hermes/scripts/hermes_reminder_lookup.py", _lookup_mode]
+                if _lookup_mode != "list":
+                    _cmd.append(_lookup_query or "reminder")
+                _cmd.extend(["--format", "friendly"])
+                _proc = await asyncio.to_thread(
+                    _rem_lookup_subprocess.run,
+                    _cmd,
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+                _lookup_result = ((_proc.stdout or "") + ("\n" + _proc.stderr if _proc.stderr else "")).strip()
+                if not _lookup_result:
+                    _lookup_result = "NOT VERIFIED\nREASON=REMINDER_LOOKUP_EMPTY_OUTPUT"
+                _lookup_adapter = self.adapters.get(source.platform)
+                if _lookup_adapter:
+                    await _lookup_adapter.send(source.chat_id, _lookup_result)
+                return None
+        except Exception as _rem_lookup_exc:
+            logger.warning("Telegram reminder lookup pre-router failed: %s", _rem_lookup_exc, exc_info=True)
+            try:
+                _lookup_adapter = self.adapters.get(source.platform)
+                if _lookup_adapter and getattr(source.platform, "value", None) == "telegram":
+                    await _lookup_adapter.send(
+                        source.chat_id,
+                        f"NOT VERIFIED\nREASON=REMINDER_LOOKUP_EXCEPTION:{type(_rem_lookup_exc).__name__}",
+                    )
+                    return None
+            except Exception:
+                logger.warning("Failed to send reminder lookup failure notice", exc_info=True)
+
         # Artifact pre-router: run before generic AI enqueue/model routing.
         # This prevents natural file-output requests from stopping at prose planning.
         try:
@@ -6700,8 +6846,32 @@ class GatewayRunner:
             source=source,
             history=history,
         )
+
         if message_text is None:
             return
+
+        _live_route_model_override = None
+        _live_route_prompt = ""
+        try:
+            if getattr(source.platform, "value", None) == "telegram" and message_text:
+                import sys as _lnr_sys
+                if "/root/.hermes/scripts" not in _lnr_sys.path:
+                    _lnr_sys.path.insert(0, "/root/.hermes/scripts")
+                from hermes_live_natural_router import handle as _lnr_handle
+                _lnr_result = await asyncio.to_thread(_lnr_handle, message_text)
+                _lnr_decision = (_lnr_result or {}).get("decision") or {}
+                if not (_lnr_result or {}).get("direct_response") and _lnr_decision.get("route") in ("default", "reasoning", "coding"):
+                    _live_route_model_override = _lnr_decision.get("model")
+                    _live_route_prompt = (
+                        "MODEL ROUTING CONTEXT: Natural-language router selected "
+                        f"route={_lnr_decision.get('route')} provider={_lnr_decision.get('provider')} "
+                        f"model={_lnr_decision.get('model')}. "
+                        "Use this route for the answer. Do not claim verified facts unless supported by tools or local records."
+                    )
+                    if _live_route_prompt:
+                        context_prompt = _live_route_prompt + "\n\n" + context_prompt
+        except Exception as _lnr_route_exc:
+            logger.warning("Live natural-language model-route context failed: %s", _lnr_route_exc, exc_info=True)
 
         # Bind this gateway run generation to the adapter's active-session
         # event so deferred post-delivery callbacks can be released by the
@@ -6733,6 +6903,7 @@ class GatewayRunner:
                 run_generation=run_generation,
                 event_message_id=event.message_id,
                 channel_prompt=event.channel_prompt,
+                route_model_override=_live_route_model_override,
             )
 
             # Stop persistent typing indicator now that the agent is done
@@ -6805,6 +6976,7 @@ class GatewayRunner:
             response = _normalize_empty_agent_response(
                 agent_result, response, history_len=len(history),
             )
+            response = _sanitize_user_visible_response(response)
 
             # If the agent's session_id changed during compression, update
             # session_entry so transcript writes below go to the right session.
@@ -13041,6 +13213,7 @@ class GatewayRunner:
         _interrupt_depth: int = 0,
         event_message_id: Optional[str] = None,
         channel_prompt: Optional[str] = None,
+        route_model_override: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the agent with the given message and context.
@@ -13617,6 +13790,12 @@ class GatewayRunner:
                     session_key=session_key,
                     user_config=user_config,
                 )
+                if route_model_override and isinstance(route_model_override, str):
+                    logger.info(
+                        "live natural router selected per-turn model=%s previous_model=%s provider=%s session=%s",
+                        route_model_override, model, runtime_kwargs.get("provider"), session_key or "",
+                    )
+                    model = route_model_override
                 logger.debug(
                     "run_agent resolved: model=%s provider=%s session=%s",
                     model, runtime_kwargs.get("provider"), session_key or "",

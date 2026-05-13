@@ -34,6 +34,14 @@ TOOL_RULES = [
         ],
     ),
     (
+        'session-recall',
+        'hermes_session_recall',
+        [
+            r'\b(why did|what caused|what did we fix|root cause)\b.*\b(hermes|reminder|failure|hallucinat|before|previous)\b',
+            r'\b(reminder system|reminder failure|hermes hallucinat|hallucinated the reminder)\b',
+        ],
+    ),
+    (
         'provider-status',
         'hermes_provider_status',
         [
@@ -226,7 +234,8 @@ def self_test(fmt: str) -> int:
     cases = [
         ('simple', 'write a short message to Mr Wang', 'default', DEFAULT_MODEL),
         ('simple_chat', 'tell me what CST means for me', 'default', DEFAULT_MODEL),
-        ('reasoning', 'why did the reminder system hallucinate?', 'reasoning', REASONING_MODEL),
+        ('history_recall_tool', 'Why did Hermes hallucinate the reminder before?', 'tool', DEFAULT_MODEL),
+        ('reasoning', 'why did this fail?', 'reasoning', REASONING_MODEL),
         ('root_cause_natural', 'what is the root cause?', 'reasoning', REASONING_MODEL),
         ('architecture', 'think through the architecture', 'reasoning', REASONING_MODEL),
         ('compare_approaches', 'compare these implementation approaches', 'reasoning', REASONING_MODEL),
