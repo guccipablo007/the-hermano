@@ -183,3 +183,56 @@ expensive_models_policy: GPT/OpenAI NewCoin models are available but avoided as 
   unless explicitly routed for a special task.
 default_model_note: gemini-2.5-flash was available but failed repeat exact-output
   verification; qwen3-32b remains the verified stable default/simple model.
+task_aware_model_router:
+  enabled: true
+  script: /root/.hermes/scripts/hermes_model_router.py
+  mode: model_selection_only_not_delegation
+  tool_first:
+    reminders: hermes_reminder_lookup / cronjob verified tools
+    provider_status: hermes_provider_status.py
+    btw_recall_status: hermes_btw_handler.py and hermes_session_recall.py
+    healthcheck: hermes_ops_healthcheck
+    rule: Use verified tools/scripts before model guessing when available.
+  routes:
+    default_simple:
+      provider: newcoin
+      model: qwen3-32b
+      use_for:
+      - short questions
+      - normal chat
+      - simple writing
+      - translation
+      - reminder formatting
+      - simple explanations
+      - basic /btw questions
+    reasoning_agentic:
+      provider: newcoin
+      model: kimi-k2.6
+      use_for:
+      - architecture planning
+      - root-cause analysis
+      - multi-step troubleshooting
+      - task decomposition
+      - agent behavior design
+      - strategy decisions
+    coding_debugging:
+      provider: newcoin
+      model: deepseek-v3.2
+      use_for:
+      - code blocks
+      - Python/Bash/systemd/logs
+      - stack traces
+      - file paths
+      - config edits
+      - gateway/router/script changes
+      - app/Firebase/database coding issues
+  fallback:
+    provider: openrouter
+    rule: Fallback only if selected NewCoin route fails.
+  future_nc_plan:
+    implemented: false
+    examples:
+    - /nc code <task>
+    - /nc reason <task>
+    - /nc cheap <task>
+    - /nc status

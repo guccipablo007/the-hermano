@@ -694,3 +694,17 @@ Do not use Doubao as the primary coding route unless explicitly re-verified and 
 Do not use GPT/OpenAI models on NewCoin as defaults because they may be expensive.
 
 Future planning only: `/nc` may later force NewCoin for a request, with optional hints such as `/nc code`, `/nc reason`, or `/nc cheap`. This is not implemented yet.
+
+## Task-Aware NewCoin Model Router
+
+Hermes has a model-selection router at `/root/.hermes/scripts/hermes_model_router.py`.
+This is model routing only, not multi-agent delegation.
+
+Routing order:
+1. Use verified tools/scripts first when available.
+2. Use NewCoin `qwen3-32b` for default/simple tasks.
+3. Use NewCoin `kimi-k2.6` for reasoning, root-cause analysis, planning, and agent behavior design.
+4. Use NewCoin `deepseek-v3.2` for coding, debugging, logs, stack traces, file paths, config edits, gateway/router/script work, and app/Firebase/database issues.
+5. Use OpenRouter only as fallback if the selected NewCoin route fails.
+
+Future planning only: `/nc code`, `/nc reason`, `/nc cheap`, and `/nc status` may be implemented later. They are not active yet.
