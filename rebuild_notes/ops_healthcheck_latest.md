@@ -1,5 +1,5 @@
 # Hermes Ops Healthcheck (quick)
-Generated: 2026-05-15T15:30:13+00:00
+Generated: 2026-05-15T16:07:16+00:00
 MODE=quick
 
 ## Gateway Active
@@ -26,12 +26,10 @@ PY_COMPILE_OK=/usr/local/lib/hermes-agent/cron/jobs.py
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/vda1        77G  7.5G   69G  10% /
                total        used        free      shared  buff/cache   available
-Mem:           1.8Gi       1.4Gi       102Mi       689Mi       1.1Gi       385Mi
+Mem:           1.8Gi       1.4Gi       117Mi       689Mi       1.1Gi       420Mi
 Swap:             0B          0B          0B
 
 ## Recent Gateway Fatal/Error Scan
-May 14 15:58:09 ubuntu python[151426]:     self.gen.throw(typ, value, traceback)
-May 14 15:58:09 ubuntu python[151426]: Traceback (most recent call last):
 GATEWAY_RECENT_CRITICAL_LOGS=NONE
 
 OPS_HEALTHCHECK_QUICK=PASSED
