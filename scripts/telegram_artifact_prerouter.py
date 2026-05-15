@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import re
 import subprocess
 from pathlib import Path
 
 EXECUTOR = Path("/root/.hermes/scripts/hermes_rich_output_execute.py")
 BATCH_EXECUTOR = Path("/root/.hermes/scripts/hermes_rich_batch_execute.py")
+FILE_VERIFY = Path("/root/.hermes/scripts/hermes_file_delivery_verify.py")
 
 PRIVATE_WORDS = [
     "gmail", "email", "mail inbox", "youtube", "analytics", "subscriber",
@@ -40,6 +42,10 @@ def is_artifact_request(text: str) -> bool:
     t = _norm(text)
     if not t:
         return False
+    if t in {"pdf", "a pdf", "the pdf"}:
+        return True
+    if re.search(r"\bshow\s+me\s+the\s+file\b.*\btelegram\b|\bshow\s+me\s+the\s+file\s+here\b", t, re.I):
+        return True
     if _contains_any(t, PRIVATE_WORDS):
         return False
     has_create = _contains_any(t, CREATE_WORDS)
@@ -105,6 +111,26 @@ def _requested_format_count(text: str) -> int:
 def handle_artifact_request(text: str) -> str:
     if not is_artifact_request(text):
         return ""
+    if _norm(text) in {"pdf", "a pdf", "the pdf"} or re.search(r"\bshow\s+me\s+the\s+file\b.*\btelegram\b|\bshow\s+me\s+the\s+file\s+here\b", _norm(text), re.I):
+        try:
+            proc = subprocess.run([str(FILE_VERIFY), "from-message", text, "--format", "json"], text=True, capture_output=True, timeout=240)
+        except Exception as exc:
+            return f"NOT VERIFIED\nREASON=FILE_VERIFY_EXCEPTION:{type(exc).__name__}:{exc}"
+        payload = {}
+        try:
+            payload = json.loads((proc.stdout or "").strip() or "{}")
+        except Exception:
+            pass
+        if proc.returncode != 0 or payload.get("verification_status") != "VERIFIED":
+            return "NOT VERIFIED\nREASON=FILE_VERIFY_FAILED\n" + (proc.stdout or proc.stderr or "").strip()
+        return "\n".join([
+            "ARTIFACT_PREROUTER=HANDLED",
+            "OUTPUT_FORMAT=pdf",
+            "ROUTE=verified_file_delivery",
+            "VERIFICATION=PASSED",
+            "TELEGRAM_DELIVERY=PASSED",
+            "OUTPUT_PATH=" + str((payload.get("file") or {}).get("path") or ""),
+        ])
     executor = BATCH_EXECUTOR if _requested_format_count(text) > 1 else EXECUTOR
     cmd = [str(executor), "--request", text]
     try:

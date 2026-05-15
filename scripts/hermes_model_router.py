@@ -23,6 +23,18 @@ SECRET_RE = re.compile(r'(Bearer\s+[A-Za-z0-9._:-]+|bot\d+:[A-Za-z0-9_-]+|sk-[A-
 
 TOOL_RULES = [
     (
+        'verified-news',
+        'hermes_verified_news',
+        [
+            r'\buse\s+your\s+web\s+skills\b',
+            r'\b(top\s+\d+\s+)?international politics news\b',
+            r'\b(top\s+\d+\s+)?ai news\b',
+            r'\b(top\s+\d+\s+)?premier league news\b',
+            r'\bnews briefing\b',
+            r'\bheadline(s)?\b',
+        ],
+    ),
+    (
         'side-question',
         'hermes_btw_handler',
         [
@@ -53,15 +65,18 @@ TOOL_RULES = [
         ],
     ),
     (
-        'reminder-lookup',
-        'hermes_reminder_lookup',
+        'storage-backed-reminder-lookup',
+        'hermes_storage_backed_lookup',
         [
             r'\bshow\s+(me\s+)?(all\s+)?my\s+(reminders|alerts)\b',
             r'\blist\s+(my\s+)?(scheduled\s+)?(reminders|alerts)\b',
             r'\bwhat\s+(reminders|alerts)\s+do\s+i\s+have\b',
+            r'^\s*any\s+reminders\??\s*$',
             r'\bscheduled\s+(reminders|alerts)\b',
             r'\bwhen\s+is\s+my\s+next\b.*\b(reminder|alert)\b',
             r'\bnext\b.*\b(reminder|alert)\b',
+            r"\bwhat(?:'s| is)\s+my\s+upload\s+schedule\b",
+            r'\bupload\s+schedule\b',
             r'\breminder\s+lookup\b',
         ],
     ),

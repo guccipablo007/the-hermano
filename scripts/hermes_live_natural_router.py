@@ -2,20 +2,46 @@
 from __future__ import annotations
 import argparse
 import json
+import os
 import re
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import hermes_model_router
 
-AUDIT = Path('/root/.hermes/model_routing/live_route_audit.jsonl')
-SCRIPTS = Path('/root/.hermes/scripts')
+def resolve_base() -> Path:
+    env_base = os.environ.get("HERMES_BASE", "").strip()
+    if env_base:
+        return Path(env_base)
+    live = Path("/root/.hermes")
+    if live.exists():
+        return live
+    return Path(__file__).resolve().parent / "root" / ".hermes"
+
+
+def python_bin() -> str:
+    configured = os.environ.get("HERMES_PYTHON_BIN", "").strip()
+    if configured:
+        return configured
+    live = Path("/usr/bin/python3")
+    return str(live) if live.exists() else sys.executable
+
+
+BASE = resolve_base()
+AUDIT = BASE / 'model_routing' / 'live_route_audit.jsonl'
+SCRIPTS = BASE / 'scripts'
+PYTHON_BIN = python_bin()
+DELEGATE_SCRIPT = Path(__file__).resolve().parent / 'hermes_agent_delegate.py'
 
 SECRET_RE = re.compile(r'(Bearer\s+[A-Za-z0-9._:-]+|bot\d+:[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]+|[A-Za-z0-9_-]{24,}\.[A-Za-z0-9._-]+)')
 ROUTE_QUESTION_RE = re.compile(r'\b(which|what)\s+(route|model|provider)\b|\broute\s+will\s+you\s+use\b|\bmodel\s+would\s+you\s+use\b', re.I)
 DEBUG_DETAIL_RE = re.compile(r'```|traceback:|stack trace|\bline\s+\d+\b|\berror:\s*\S+|journalctl|systemctl status|firebase.*(permission-denied|unavailable|error code)', re.I)
+NEWS_INTENT_RE = re.compile(r'\b(news|headlines|briefing)\b|\buse\s+your\s+web\s+skills\b', re.I)
+UPLOAD_SCHEDULE_RE = re.compile(r"\bwhat(?:'s| is)\s+my\s+upload\s+schedule\b|\bupload\s+schedule\b", re.I)
+FILE_WRITE_RE = re.compile(r'^\s*pdf\s*$|\b(create|generate|make|build)\b.*\b(pdf|document|report|briefing|file)\b|\b(send|deliver|upload)\b.*\btelegram\b|\btelegram\b|\bshow\s+me\s+the\s+file\b', re.I)
 AGENT_PREVIEW_RE = re.compile(
     r'\b(which|what)\s+agent\b|\bwho\s+(would\s+)?handle(s)?\b|'
     r'\bwhich\s+part\s+of\s+hermes\s+handles\b|\bagent\s+would\s+handle\b|'
@@ -43,8 +69,12 @@ READONLY_EXECUTION_RE = re.compile(
     r'\brun\s+(quick|deep)\s+healthcheck\b|'
     r'\bshow\s+(recent\s+)?delegated\s+tasks\b|'
     r'\bshow\s+(me\s+)?(all\s+)?my\s+reminders\b|'
+    r'^\s*any\s+reminders\??\s*$|'
     r'\bwhat\s+reminders\s+do\s+i\s+have\b|'
-    r'\bverify\s+latest\s+git\s+backup\b',
+    r'\bverify\s+latest\s+git\s+backup\b|'
+    r"\bwhat(?:'s| is)\s+my\s+upload\s+schedule\b|"
+    r'\bupload\s+schedule\b|'
+    r'\b(news|headlines|briefing)\b|\buse\s+your\s+web\s+skills\b',
     re.I,
 )
 DELEGATED_STATUS_RE = re.compile(
@@ -82,6 +112,10 @@ def run(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
         return proc.returncode, mask(out)
     except Exception as exc:
         return 1, f'NOT VERIFIED\nREASON={type(exc).__name__}'
+
+
+def pycmd(script: Path, *args: str) -> list[str]:
+    return [PYTHON_BIN, str(script), *args]
 
 
 def audit(message: str, decision: dict[str, Any], direct: bool, tool: str | None = None) -> None:
@@ -178,7 +212,7 @@ def is_risky_live_execution(message: str) -> bool:
     return bool(RISKY_LIVE_EXECUTION_RE.search(message or ''))
 
 def readonly_execution_response(message: str) -> str:
-    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'execute-readonly', message or ''], timeout=320)
+    rc, out = run(pycmd(DELEGATE_SCRIPT, 'execute-readonly', message or ''), timeout=320)
     data = parse_delegate_output(out)
     if rc != 0 or not data:
         return 'Your Majesty, I could not complete the read-only delegated check.\n\nNOT VERIFIED'
@@ -205,7 +239,7 @@ def is_readonly_execution_intent(message: str) -> bool:
 
 
 def low_risk_write_response(message: str) -> str:
-    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'execute-low-risk-write', message or ''], timeout=120)
+    rc, out = run(pycmd(DELEGATE_SCRIPT, 'execute-low-risk-write', message or ''), timeout=120)
     data = parse_delegate_output(out)
     if rc != 0 or not data:
         return 'Your Majesty, I could not verify the low-risk write request.\n\nNOT VERIFIED'
@@ -240,7 +274,7 @@ def is_low_risk_write_intent(message: str) -> bool:
     return bool(LOW_RISK_WRITE_RE.search(message or ''))
 
 def dry_run_delegation_response(message: str) -> str:
-    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'delegate', message or '', '--dry-run'], timeout=60)
+    rc, out = run(pycmd(DELEGATE_SCRIPT, 'delegate', message or '', '--dry-run'), timeout=60)
     data = parse_delegate_output(out)
     if rc != 0 or data.get('verification_status') != 'NOT_EXECUTED_DRY_RUN':
         return 'Your Majesty, I could not create a verified dry-run delegation plan.\n\nNOT VERIFIED'
@@ -290,7 +324,7 @@ def agent_list_response() -> str:
 
 def delegated_status_response(raw: bool = False) -> str:
     fmt = 'raw' if raw else 'friendly'
-    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'status', '--format', fmt, '--limit', '8'], timeout=45)
+    rc, out = run(pycmd(DELEGATE_SCRIPT, 'status', '--format', fmt, '--limit', '8'), timeout=45)
     if rc != 0 or not out.strip():
         return 'Your Majesty, I could not verify delegated task status from the task ledger.\n\nNOT VERIFIED'
     if 'NO_DELEGATED_TASKS_FOUND' in out or 'No delegated tasks found' in out:
@@ -312,7 +346,7 @@ def agent_preview_response(message: str) -> str:
         return ('Your Majesty, live delegation execution is not enabled yet.\n\n'
                 'I can prepare a dry-run delegation plan, but I will not execute delegated tasks from live Telegram in this phase.')
 
-    rc, out = run(['python3', str(SCRIPTS / 'hermes_agent_delegate.py'), 'classify', message or ''], timeout=45)
+    rc, out = run(pycmd(DELEGATE_SCRIPT, 'classify', message or ''), timeout=45)
     data = parse_key_values(out)
     agent = data.get('recommended_agent') or 'NOT VERIFIED'
     route = data.get('route') or 'NOT VERIFIED'
@@ -343,7 +377,7 @@ def is_agent_preview_intent(message: str) -> bool:
 
 
 def reminder_guard(message: str) -> dict[str, Any]:
-    rc, out = run(['python3', str(SCRIPTS / 'hermes_reminder_intent_guard.py'), message or '', '--format', 'json'], timeout=45)
+    rc, out = run(pycmd(SCRIPTS / 'hermes_reminder_intent_guard.py', message or '', '--format', 'json'), timeout=45)
     if rc != 0 or not out.strip():
         return {'applies': False, 'direct_response': False, 'category': 'guard_unavailable'}
     try:
@@ -373,11 +407,21 @@ def handle(message: str) -> dict[str, Any]:
         response = delegated_status_response(raw=bool(RAW_DELEGATED_STATUS_RE.search(message or '')))
         decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_status', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'storage-backed delegated task ledger status'}
         tool = 'hermes_agent_delegate_status'
+    elif NEWS_INTENT_RE.search(message or ''):
+        direct = True
+        _, response = run(pycmd(SCRIPTS / 'hermes_verified_news.py', 'from-query', message or '', '--format', 'friendly'), timeout=180)
+        decision = {'route': 'tool', 'tool': 'hermes_verified_news', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'verified web/news retrieval'}
+        tool = 'hermes_verified_news'
     elif is_dry_run_delegation_intent(message or ''):
         direct = True
         response = dry_run_delegation_response(message or '')
         decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_dry_run', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'safe dry-run delegation plan'}
         tool = 'hermes_agent_delegate_dry_run'
+    elif FILE_WRITE_RE.search(message or ''):
+        direct = True
+        response = low_risk_write_response(message or '')
+        decision = {'route': 'tool', 'tool': 'hermes_file_delivery_verify', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'trusted-vps verified file generation and delivery'}
+        tool = 'hermes_file_delivery_verify'
     elif is_low_risk_write_intent(message or ''):
         direct = True
         response = low_risk_write_response(message or '')
@@ -404,17 +448,22 @@ def handle(message: str) -> dict[str, Any]:
     elif route == 'tool':
         direct = True
         if tool == 'hermes_provider_status':
-            _, response = run(['python3', str(SCRIPTS / 'hermes_provider_status.py'), 'status', '--format', 'friendly'], timeout=45)
-        elif tool == 'hermes_reminder_lookup':
+            _, response = run(pycmd(SCRIPTS / 'hermes_provider_status.py', 'status', '--format', 'friendly'), timeout=45)
+        elif tool in {'hermes_reminder_lookup', 'hermes_storage_backed_lookup'}:
             args = reminder_args(message)
-            cmd = ['python3', str(SCRIPTS / 'hermes_reminder_lookup.py'), *args, '--format', 'friendly']
+            cmd = pycmd(
+                SCRIPTS / 'hermes_storage_backed_lookup.py',
+                'upload-schedule' if UPLOAD_SCHEDULE_RE.search(message or '') else 'any-reminders',
+                '--format',
+                'friendly',
+            )
             _, response = run(cmd, timeout=45)
         elif tool == 'hermes_btw_handler':
             text = message if (message or '').lstrip().lower().startswith('/btw') else '/btw ' + (message or '')
-            _, response = run(['python3', str(SCRIPTS / 'hermes_btw_handler.py'), text], timeout=60)
+            _, response = run(pycmd(SCRIPTS / 'hermes_btw_handler.py', text), timeout=60)
         elif tool == 'hermes_session_recall':
             q = recall_query(message)
-            _, response = run(['python3', str(SCRIPTS / 'hermes_btw_handler.py'), '/btw search ' + q], timeout=80)
+            _, response = run(pycmd(SCRIPTS / 'hermes_btw_handler.py', '/btw search ' + q), timeout=80)
             if response and 'NOT VERIFIED' not in response:
                 response = 'Your Majesty, I checked local Hermes records first.\n\n' + response
             elif not response:

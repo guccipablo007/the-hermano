@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -13,12 +14,46 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
-BASE = Path("/root/.hermes")
+def resolve_base() -> Path:
+    env_base = os.environ.get("HERMES_BASE", "").strip()
+    if env_base:
+        return Path(env_base)
+    live = Path("/root/.hermes")
+    if live.exists():
+        return live
+    return Path(__file__).resolve().parent / "root" / ".hermes"
+
+
+def python_bin() -> str:
+    configured = os.environ.get("HERMES_PYTHON_BIN", "").strip()
+    if configured:
+        return configured
+    live = Path("/usr/bin/python3")
+    return str(live) if live.exists() else sys.executable
+
+
+BASE = resolve_base()
+SELF = Path(__file__).resolve()
 TASK_DIR = BASE / "agent_tasks"
 REPORT_DIR = TASK_DIR / "reports"
 LEDGER = TASK_DIR / "tasks.jsonl"
 AGENTS_DIR = BASE / "agents"
+SCRIPTS = BASE / "scripts"
+PYTHON_BIN = python_bin()
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
+TRUSTED_WRITE_DIRS = [
+    REPORT_DIR,
+    BASE / "outputs",
+    BASE / "outputs" / "pdf",
+    BASE / "tmp",
+]
+TRUSTED_VPS_POLICY = {
+    "mode": "trusted-vps",
+    "safe_read_write_dirs": [str(path) for path in TRUSTED_WRITE_DIRS],
+    "allowed_reads": ["approved Hermes working directories", "storage-backed reminder data", "verified web/news retrieval"],
+    "allowed_writes": ["approved Hermes working directories", "verified reminder tools", "verified file generation", "verified Telegram document delivery"],
+    "blocked_actions": ["deletes", "service restarts", "credential edits", "provider/model route edits", "arbitrary shell", "database destructive writes"],
+}
 
 AGENTS = {
     "overseer": {
@@ -62,6 +97,10 @@ RISKY_WORDS = [
     "delete", "remove", "drop", "reset", "wipe", "restart", "deploy", "migrate", "edit", "patch", "write",
     "configure gmail", "configure youtube", "private_data", "token", "secret", "credential",
 ]
+NEWS_INTENT_RE = re.compile(r"\b(news|headlines|briefing)\b|\buse\s+your\s+web\s+skills\b", re.I)
+UPLOAD_SCHEDULE_RE = re.compile(r"\bwhat(?:'s| is)\s+my\s+upload\s+schedule\b|\bupload\s+schedule\b", re.I)
+FILE_GENERATION_RE = re.compile(r"^\s*pdf\s*$|\b(create|generate|make|build)\b.*\b(pdf|document|report|briefing|file)\b", re.I)
+TELEGRAM_DELIVERY_RE = re.compile(r"\b(send|deliver|upload)\b.*\btelegram\b|\btelegram\b.*\b(send|deliver|upload)\b", re.I)
 
 
 def mask(text: Any) -> str:
@@ -94,9 +133,9 @@ def run_cmd(args: List[str], timeout: int = 120) -> Dict[str, Any]:
 
 
 def router_decision(message: str) -> Dict[str, Any]:
-    script = BASE / "scripts" / "hermes_model_router.py"
+    script = SCRIPTS / "hermes_model_router.py"
     if script.exists():
-        proc = run_cmd(["/usr/bin/python3", str(script), "classify", message, "--format", "raw"], timeout=60)
+        proc = run_cmd([PYTHON_BIN, str(script), "classify", message, "--format", "raw"], timeout=60)
         try:
             data = json.loads(proc["stdout"])
             if isinstance(data, dict):
@@ -117,6 +156,8 @@ def classify(message: str) -> Dict[str, Any]:
             agent_id = "ops_verification"
         else:
             agent_id = "personal_admin_tutor"
+    elif NEWS_INTENT_RE.search(message or ""):
+        agent_id = "ops_verification"
     elif tool in {"hermes_provider_status", "hermes_session_recall"} or any(w in t for w in ["healthy", "healthcheck", "gateway", "systemd", "backup", "verify", "verified", "proof", "claim success", "without proof", "provider status"]):
         agent_id = "ops_verification"
     elif route == "coding" or any(w in t for w in ["firebase", "firestore", "python", "traceback", "stack trace", "database", "app", "script", "bash", "systemd service", "code", "debug"]):
@@ -306,6 +347,14 @@ def format_dry_run_response(report: Dict[str, Any]) -> str:
     ]
     return "\n".join(lines)
 
+
+def script_cmd(name: str, *args: str) -> List[str]:
+    return [PYTHON_BIN, str(SCRIPTS / name), *args]
+
+
+def shell_join(args: List[str]) -> str:
+    return " ".join(shlex.quote(str(part)) for part in args)
+
 def safe_tool_report(task_id: str, message: str, cls: Dict[str, Any]) -> Dict[str, Any]:
     tool = cls.get("tool")
     t = message.lower()
@@ -317,11 +366,18 @@ def safe_tool_report(task_id: str, message: str, cls: Dict[str, Any]) -> Dict[st
 
     if tool == "hermes_provider_status" or "provider status" in t or "model" in t:
         commands.append("python3 /root/.hermes/scripts/hermes_provider_status.py status --format friendly")
-        proc = run_cmd(["/usr/bin/python3", "/root/.hermes/scripts/hermes_provider_status.py", "status", "--format", "friendly"])
+        proc = run_cmd(script_cmd("hermes_provider_status.py", "status", "--format", "friendly"))
         status = "completed" if proc["ok"] and "NewCoin" in proc["stdout"] else "failed"
         summary = "Provider/model status checked through verified local provider-status tool."
         actions.append("Ran provider-status tool.")
         evidence.append({"type": "command_contains", "command": "python3 /root/.hermes/scripts/hermes_provider_status.py status --format friendly", "contains": "NewCoin"})
+    elif NEWS_INTENT_RE.search(message or ""):
+        commands.append("python3 /root/.hermes/scripts/hermes_verified_news.py from-query <message> --format friendly")
+        proc = run_cmd(script_cmd("hermes_verified_news.py", "from-query", message, "--format", "friendly"), timeout=180)
+        status = "completed" if proc["ok"] and "VERIFIED_ARTICLES=" in proc["stdout"] else "failed"
+        summary = "Verified news retrieval attempted through the web/news verifier."
+        actions.append("Ran verified news retrieval.")
+        evidence.append({"type": "command_contains", "command": "python3 /root/.hermes/scripts/hermes_verified_news.py from-query <message> --format friendly", "contains": "VERIFIED_ARTICLES="})
     elif cls.get("recommended_agent_id") == "ops_verification" and any(w in t for w in ["health", "healthy", "gateway"]):
         commands.append("hermes_ops_healthcheck --quick")
         proc = run_cmd(["/usr/local/bin/hermes_ops_healthcheck", "--quick"], timeout=180)
@@ -329,13 +385,20 @@ def safe_tool_report(task_id: str, message: str, cls: Dict[str, Any]) -> Dict[st
         summary = "Gateway health checked through Ops Guardian quick healthcheck."
         actions.append("Ran quick Ops Guardian healthcheck.")
         evidence.append({"type": "healthcheck_quick"})
+    elif UPLOAD_SCHEDULE_RE.search(message or ""):
+        commands.append("python3 /root/.hermes/scripts/hermes_storage_backed_lookup.py upload-schedule --format friendly")
+        proc = run_cmd(script_cmd("hermes_storage_backed_lookup.py", "upload-schedule", "--format", "friendly"))
+        status = "completed" if proc["ok"] and "VERIFIED_STORAGE_LOOKUP=PASSED" in proc["stdout"] else "failed"
+        summary = "Upload schedule checked through storage-backed reminder lookup."
+        actions.append("Used storage-backed upload schedule lookup.")
+        evidence.append({"type": "command_contains", "command": "python3 /root/.hermes/scripts/hermes_storage_backed_lookup.py upload-schedule --format friendly", "contains": "VERIFIED_STORAGE_LOOKUP=PASSED"})
     elif cls.get("tool") == "hermes_reminder_lookup" or "reminder" in t:
-        commands.append("python3 /root/.hermes/scripts/hermes_reminder_lookup.py list --format friendly")
-        proc = run_cmd(["/usr/bin/python3", "/root/.hermes/scripts/hermes_reminder_lookup.py", "list", "--format", "friendly"])
+        commands.append("python3 /root/.hermes/scripts/hermes_storage_backed_lookup.py any-reminders --format friendly")
+        proc = run_cmd(script_cmd("hermes_storage_backed_lookup.py", "any-reminders", "--format", "friendly"))
         status = "completed" if proc["ok"] and "verified" in proc["stdout"].lower() else "failed"
         summary = "Reminder lookup planned or checked through storage-backed reminder lookup."
         actions.append("Used storage-backed reminder lookup route.")
-        evidence.append({"type": "command_contains", "command": "python3 /root/.hermes/scripts/hermes_reminder_lookup.py list --format friendly", "contains": "verified"})
+        evidence.append({"type": "command_contains", "command": "python3 /root/.hermes/scripts/hermes_storage_backed_lookup.py any-reminders --format friendly", "contains": "verified"})
     else:
         status = "needs_user_input"
         summary = "Delegation is bounded. Specialist needs user-provided logs, code, or explicit approval before execution."
@@ -359,7 +422,7 @@ def safe_tool_report(task_id: str, message: str, cls: Dict[str, Any]) -> Dict[st
 
 
 def verify_report(path: Path) -> Dict[str, Any]:
-    proc = run_cmd(["/usr/bin/python3", str(BASE / "scripts" / "hermes_agent_report_verify.py"), str(path)], timeout=180)
+    proc = run_cmd([PYTHON_BIN, str(SCRIPTS / "hermes_agent_report_verify.py"), str(path)], timeout=180)
     return {"verified": proc["ok"] and "VERIFIED" in proc["stdout"].splitlines()[:1], "output": proc["stdout"], "rc": proc["rc"]}
 
 
@@ -431,6 +494,9 @@ def readonly_plan(message: str) -> Dict[str, Any]:
     t = (message or "").lower()
     if any(re.search(pat, t) for pat in BLOCKED_RISKY_PATTERNS):
         return {"allowed": False, "kind": "blocked", "reason": "BLOCKED_RISKY_ACTION"}
+    if NEWS_INTENT_RE.search(message or ""):
+        args = script_cmd("hermes_verified_news.py", "from-query", message or "", "--format", "friendly")
+        return {"allowed": True, "kind": "verified_news", "args": args, "contains": "VERIFIED_ARTICLES=", "summary": "Verified news briefing retrieved from real web sources."}
     if "deep" in t and ("healthcheck" in t or "health check" in t):
         return {"allowed": True, "kind": "deep_healthcheck", "args": ["/usr/local/bin/hermes_ops_healthcheck", "--deep"], "contains": "OPS_HEALTHCHECK_DEEP=PASSED", "summary": "Deep Ops Guardian healthcheck completed."}
     if "quick" in t and ("healthcheck" in t or "health check" in t):
@@ -440,11 +506,13 @@ def readonly_plan(message: str) -> Dict[str, Any]:
     if "provider" in t or "model" in t:
         return {"allowed": True, "kind": "provider_status", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_provider_status.py", "status", "--format", "friendly"], "contains": "NewCoin", "summary": "Provider/model status checked."}
     if "delegated" in t or "task ledger" in t or "agent tasks" in t:
-        return {"allowed": True, "kind": "delegated_task_status", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_agent_delegate.py", "status", "--format", "friendly", "--limit", "8"], "contains": "Recent delegated tasks", "summary": "Recent delegated task ledger read."}
+        return {"allowed": True, "kind": "delegated_task_status", "args": [PYTHON_BIN, str(SELF), "status", "--format", "friendly", "--limit", "8"], "contains": "Recent delegated tasks", "summary": "Recent delegated task ledger read."}
+    if UPLOAD_SCHEDULE_RE.search(message or ""):
+        return {"allowed": True, "kind": "upload_schedule_lookup", "args": script_cmd("hermes_storage_backed_lookup.py", "upload-schedule", "--format", "friendly"), "contains": "VERIFIED_STORAGE_LOOKUP=PASSED", "summary": "Upload schedule read from verified storage."}
     if "reminder" in t or "reminders" in t or "alerts" in t:
-        return {"allowed": True, "kind": "reminder_lookup", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_reminder_lookup.py", "list", "--format", "friendly"], "contains": "verified", "summary": "Reminder list read from storage."}
+        return {"allowed": True, "kind": "reminder_lookup", "args": script_cmd("hermes_storage_backed_lookup.py", "any-reminders", "--format", "friendly"), "contains": "VERIFIED_STORAGE_LOOKUP=PASSED", "summary": "Reminder list read from storage."}
     if "latest" in t and "backup" in t:
-        return {"allowed": True, "kind": "latest_backup", "args": ["/usr/bin/python3", "/root/.hermes/scripts/hermes_verify_claim.py", "latest-backup"], "contains": "VERIFIED", "summary": "Latest Git backup commit verified."}
+        return {"allowed": True, "kind": "latest_backup", "args": script_cmd("hermes_verify_claim.py", "latest-backup"), "contains": "VERIFIED", "summary": "Latest Git backup commit verified."}
     if "route" in t and "audit" in t:
         return {"allowed": True, "kind": "route_audit", "args": ["/usr/bin/tail", "-20", "/root/.hermes/model_routing/live_route_audit.jsonl"], "contains": "route", "summary": "Recent route-audit entries inspected."}
     return {"allowed": False, "kind": "blocked", "reason": "NOT_READ_ONLY_WHITELISTED"}
@@ -544,7 +612,7 @@ def format_readonly_response(result: Dict[str, Any]) -> str:
 
 
 def reminder_guard_json(message: str) -> Dict[str, Any]:
-    proc = run_cmd(["/usr/bin/python3", "/root/.hermes/scripts/hermes_reminder_intent_guard.py", message or "", "--format", "json"], timeout=60)
+    proc = run_cmd(script_cmd("hermes_reminder_intent_guard.py", message or "", "--format", "json"), timeout=60)
     if not proc.get("ok"):
         return {"applies": False, "create_allowed": False, "direct_response": False, "category": "guard_failed", "response": proc.get("stderr") or proc.get("stdout")}
     try:
@@ -565,6 +633,8 @@ def low_risk_block_reason(message: str) -> str | None:
             if REMINDER_CREATE_RE.search(text) and not re.search(r"\b(delete|remove|cancel)\b", low):
                 continue
             if TASK_NOTE_RE.search(text) and not any(x in low for x in ["config", "code", "provider", "model routing", "credential", "token", "secret"]):
+                continue
+            if (FILE_GENERATION_RE.search(text) or TELEGRAM_DELIVERY_RE.search(text)) and not any(x in low for x in ["config", "code", "provider", "model routing", "credential", "token", "secret", "service", "database"]):
                 continue
             return "Request is outside the low-risk write allow-list."
     return None
@@ -707,6 +777,40 @@ def task_note_body(message: str, task_id: str, cls: Dict[str, Any]) -> Dict[str,
     }
 
 
+def create_verified_file_delivery(message: str) -> Dict[str, Any]:
+    proc = run_cmd(script_cmd("hermes_file_delivery_verify.py", "from-message", message or "", "--format", "json"), timeout=180)
+    if not proc.get("stdout", "").strip():
+        return {
+            "status": "failed",
+            "verification_status": "NOT VERIFIED",
+            "write_type": "file_delivery",
+            "summary": "Verified file delivery tool returned no output.",
+            "evidence": [],
+        }
+    try:
+        data = json.loads(proc["stdout"])
+    except Exception:
+        return {
+            "status": "failed",
+            "verification_status": "NOT VERIFIED",
+            "write_type": "file_delivery",
+            "summary": "Verified file delivery tool returned invalid JSON.",
+            "evidence": [{"type": "raw_output", "detail": proc.get("stdout", "")[:800]}],
+        }
+    verified = str(data.get("verification_status") or "NOT VERIFIED")
+    delivered = bool(data.get("telegram_delivery", {}).get("ok"))
+    file_path = str(data.get("file", {}).get("path") or "")
+    return {
+        "status": "completed" if verified == "VERIFIED" else "failed",
+        "verification_status": verified,
+        "write_type": "file_delivery",
+        "summary": str(data.get("summary") or ("Verified file created and delivered." if delivered else "File generation or delivery was not verified.")),
+        "files_written": [file_path] if file_path else [],
+        "telegram_ok": delivered,
+        "evidence": list(data.get("evidence") or []),
+    }
+
+
 def low_risk_write_action(message: str, cls: Dict[str, Any], task_id: str) -> Dict[str, Any]:
     block_reason = low_risk_block_reason(message)
     if block_reason:
@@ -717,6 +821,8 @@ def low_risk_write_action(message: str, cls: Dict[str, Any], task_id: str) -> Di
         return update_verified_reminder(message)
     if REMINDER_CREATE_RE.search(message or ""):
         return create_verified_reminder(message)
+    if FILE_GENERATION_RE.search(message or "") or TELEGRAM_DELIVERY_RE.search(message or ""):
+        return create_verified_file_delivery(message)
     if TASK_NOTE_RE.search(message or ""):
         approved = (message or "").strip().upper().startswith(LOW_RISK_APPROVAL_PHRASE)
         if not approved:
@@ -758,6 +864,7 @@ def low_risk_write_report(task_id: str, message: str, cls: Dict[str, Any], actio
         "files_written": action.get("files_written", []),
         "reminder_job_id": action.get("reminder_job_id"),
         "next_run_at": action.get("next_run_at"),
+        "telegram_ok": action.get("telegram_ok"),
         "verification_status": action.get("verification_status", "NOT VERIFIED"),
         "evidence": action.get("evidence", []),
         "summary": action.get("summary"),
@@ -816,6 +923,8 @@ def format_low_risk_write_response(result: Dict[str, Any]) -> str:
         lines.append("reminder_job_id=" + str(report.get("reminder_job_id")))
     if report.get("next_run_at"):
         lines.append("next_run_at=" + str(report.get("next_run_at")))
+    if report.get("telegram_ok") is not None:
+        lines.append("telegram_ok=" + str(bool(report.get("telegram_ok"))).lower())
     if report.get("evidence"):
         lines.append("evidence=" + mask(json.dumps(report.get("evidence"), ensure_ascii=False))[:1200])
     lines.append("actions_not_taken=" + "; ".join(map(str, report.get("actions_not_taken") or [])))
