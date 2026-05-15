@@ -42,6 +42,18 @@ DEBUG_DETAIL_RE = re.compile(r'```|traceback:|stack trace|\bline\s+\d+\b|\berror
 NEWS_INTENT_RE = re.compile(r'\b(news|headlines|briefing)\b|\buse\s+your\s+web\s+skills\b', re.I)
 UPLOAD_SCHEDULE_RE = re.compile(r"\bwhat(?:'s| is)\s+my\s+upload\s+schedule\b|\bupload\s+schedule\b", re.I)
 FILE_WRITE_RE = re.compile(r'^\s*pdf\s*$|\b(create|generate|make|build)\b.*\b(pdf|document|report|briefing|file)\b|\b(send|deliver|upload)\b.*\btelegram\b|\btelegram\b|\bshow\s+me\s+the\s+file\b', re.I)
+FACTUAL_QA_RE = re.compile(
+    r'^\s*(who|what|when|where|which|did|is|was)\b.*\b('
+    r'first|ever|invented|made|created|capital\s+of|electric\s+air\s*plane|'
+    r'electric\s+aircraft|electric\s+car|telephone|latest|current|today|now|'
+    r'president|prime minister|ceo|free tier|benchmark'
+    r')',
+    re.I,
+)
+FACTUAL_QA_EXCLUDE_RE = re.compile(
+    r'\b(upload\s+schedule|reminder|news|briefing|pdf|telegram|provider|model|route|agent|delegated|gateway)\b',
+    re.I,
+)
 AGENT_PREVIEW_RE = re.compile(
     r'\b(which|what)\s+agent\b|\bwho\s+(would\s+)?handle(s)?\b|'
     r'\bwhich\s+part\s+of\s+hermes\s+handles\b|\bagent\s+would\s+handle\b|'
@@ -297,6 +309,23 @@ def verified_file_response(message: str) -> str:
         return 'Your Majesty, the PDF/file request was not verified.\n\nNOT VERIFIED'
     return out.strip() or 'Your Majesty, the PDF/file request was not verified.\n\nNOT VERIFIED'
 
+
+def is_factual_qa_intent(message: str) -> bool:
+    text = (message or '').strip()
+    if not text or '\n' in text:
+        return False
+    if FACTUAL_QA_EXCLUDE_RE.search(text):
+        return False
+    return bool(FACTUAL_QA_RE.search(text))
+
+
+def verified_fact_response(message: str) -> str:
+    fmt = 'raw' if re.search(r'\b(raw|debug|json)\b', message or '', re.I) else 'friendly'
+    rc, out = run(pycmd(SCRIPTS / 'hermes_verified_fact.py', 'answer', message or '', '--format', fmt), timeout=120)
+    if rc != 0:
+        return 'Your Majesty, I could not verify that factual answer.\n\nNOT VERIFIED'
+    return out.strip() or 'Your Majesty, I could not verify that factual answer.\n\nNOT VERIFIED'
+
 def dry_run_delegation_response(message: str) -> str:
     rc, out = run(pycmd(DELEGATE_SCRIPT, 'delegate', message or '', '--dry-run'), timeout=60)
     data = parse_delegate_output(out)
@@ -495,6 +524,11 @@ def handle(message: str) -> dict[str, Any]:
                 response = 'Your Majesty, I could not verify that from local Hermes records.\n\nNOT VERIFIED'
         else:
             response = 'NOT VERIFIED\nREASON=UNKNOWN_TOOL_ROUTE'
+    elif is_factual_qa_intent(message or ''):
+        direct = True
+        response = verified_fact_response(message or '')
+        decision = {'route': 'tool', 'tool': 'hermes_verified_fact', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'factual q&a owner: direct known facts or verified distinction route'}
+        tool = 'hermes_verified_fact'
     elif ROUTE_QUESTION_RE.search(message or '') or should_direct_for_debug(decision, message or ''):
         direct = True
         response = route_preview(decision, message or '')
