@@ -273,6 +273,30 @@ def low_risk_write_response(message: str) -> str:
 def is_low_risk_write_intent(message: str) -> bool:
     return bool(LOW_RISK_WRITE_RE.search(message or ''))
 
+
+def verified_file_response(message: str) -> str:
+    rc, out = run(pycmd(SCRIPTS / 'hermes_file_delivery_verify.py', 'from-message', message or '', '--format', 'json'), timeout=320)
+    try:
+        data = json.loads(out) if out.strip() else {}
+    except Exception:
+        data = {}
+    if data:
+        user_output = str(data.get('user_output') or '').strip()
+        if user_output:
+            return user_output
+        if data.get('verification_status') == 'VERIFIED':
+            file_info = data.get('file') or {}
+            delivery = data.get('telegram_delivery') or {}
+            return (
+                'Your Majesty, the verified artifact flow completed.\n\n'
+                f"Output: {file_info.get('path', 'NOT VERIFIED')}\n"
+                f"Content verified: {'true' if file_info.get('content_verified') else 'false'}\n"
+                f"Telegram API ok: {'true' if delivery.get('ok') else 'false'}"
+            )
+    if rc != 0:
+        return 'Your Majesty, the PDF/file request was not verified.\n\nNOT VERIFIED'
+    return out.strip() or 'Your Majesty, the PDF/file request was not verified.\n\nNOT VERIFIED'
+
 def dry_run_delegation_response(message: str) -> str:
     rc, out = run(pycmd(DELEGATE_SCRIPT, 'delegate', message or '', '--dry-run'), timeout=60)
     data = parse_delegate_output(out)
@@ -409,7 +433,8 @@ def handle(message: str) -> dict[str, Any]:
         tool = 'hermes_agent_delegate_status'
     elif NEWS_INTENT_RE.search(message or ''):
         direct = True
-        _, response = run(pycmd(SCRIPTS / 'hermes_verified_news.py', 'from-query', message or '', '--format', 'friendly'), timeout=180)
+        news_format = 'debug' if re.search(r'\b(raw|debug|json)\b', message or '', re.I) else 'telegram'
+        _, response = run(pycmd(SCRIPTS / 'hermes_verified_news.py', 'from-query', message or '', '--format', news_format), timeout=180)
         decision = {'route': 'tool', 'tool': 'hermes_verified_news', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'verified web/news retrieval'}
         tool = 'hermes_verified_news'
     elif is_dry_run_delegation_intent(message or ''):
@@ -419,7 +444,7 @@ def handle(message: str) -> dict[str, Any]:
         tool = 'hermes_agent_delegate_dry_run'
     elif FILE_WRITE_RE.search(message or ''):
         direct = True
-        response = low_risk_write_response(message or '')
+        response = verified_file_response(message or '')
         decision = {'route': 'tool', 'tool': 'hermes_file_delivery_verify', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'trusted-vps verified file generation and delivery'}
         tool = 'hermes_file_delivery_verify'
     elif is_low_risk_write_intent(message or ''):

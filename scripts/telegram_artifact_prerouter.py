@@ -31,6 +31,10 @@ DELIVERY_WORDS = [
     "send it to me", "send to telegram", "send it", "deliver", "as a pdf",
     "as docx", "as a docx", "as pptx", "as a pptx", "as xlsx", "as a file"
 ]
+RESEND_RE = re.compile(
+    r"\bshow\s+me\s+the\s+(?:file|pdf)\b|\bsend\s+the\s+pdf\s+again\b|\bresend\b|\bshow\s+me\s+the\s+file\s+here\b",
+    re.I,
+)
 
 def _norm(text: str) -> str:
     return (text or "").lower().strip()
@@ -44,7 +48,9 @@ def is_artifact_request(text: str) -> bool:
         return False
     if t in {"pdf", "a pdf", "the pdf"}:
         return True
-    if re.search(r"\bshow\s+me\s+the\s+file\b.*\btelegram\b|\bshow\s+me\s+the\s+file\s+here\b", t, re.I):
+    if RESEND_RE.search(t):
+        return True
+    if "\n" in (text or "") and "pdf" in t:
         return True
     if _contains_any(t, PRIVATE_WORDS):
         return False
@@ -111,7 +117,7 @@ def _requested_format_count(text: str) -> int:
 def handle_artifact_request(text: str) -> str:
     if not is_artifact_request(text):
         return ""
-    if _norm(text) in {"pdf", "a pdf", "the pdf"} or re.search(r"\bshow\s+me\s+the\s+file\b.*\btelegram\b|\bshow\s+me\s+the\s+file\s+here\b", _norm(text), re.I):
+    if "pdf" in _norm(text) or RESEND_RE.search(_norm(text)):
         try:
             proc = subprocess.run([str(FILE_VERIFY), "from-message", text, "--format", "json"], text=True, capture_output=True, timeout=240)
         except Exception as exc:
@@ -121,16 +127,12 @@ def handle_artifact_request(text: str) -> str:
             payload = json.loads((proc.stdout or "").strip() or "{}")
         except Exception:
             pass
+        user_output = str(payload.get("user_output") or "").strip()
+        if user_output:
+            return user_output
         if proc.returncode != 0 or payload.get("verification_status") != "VERIFIED":
             return "NOT VERIFIED\nREASON=FILE_VERIFY_FAILED\n" + (proc.stdout or proc.stderr or "").strip()
-        return "\n".join([
-            "ARTIFACT_PREROUTER=HANDLED",
-            "OUTPUT_FORMAT=pdf",
-            "ROUTE=verified_file_delivery",
-            "VERIFICATION=PASSED",
-            "TELEGRAM_DELIVERY=PASSED",
-            "OUTPUT_PATH=" + str((payload.get("file") or {}).get("path") or ""),
-        ])
+        return "I created and sent the verified PDF in Telegram."
     executor = BATCH_EXECUTOR if _requested_format_count(text) > 1 else EXECUTOR
     cmd = [str(executor), "--request", text]
     try:
