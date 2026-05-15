@@ -1,0 +1,401 @@
+{
+  "phase": "7L",
+  "generated_from_live_vps": true,
+  "generated_on_utc": "2026-05-15T15:00:00Z",
+  "repo_roots": {
+    "backup_mirror_repo": "/root/hermano-backup",
+    "gateway_runtime_repo": "/usr/local/lib/hermes-agent",
+    "live_hermes_tree": "/root/.hermes"
+  },
+  "entries": [
+    {
+      "phase_name": "PHASE_6YD_TELEGRAM_ARTIFACT_PREROUTER",
+      "commit_hash_if_known": "944d742",
+      "files_changed": [
+        "/root/.hermes/scripts/telegram_artifact_prerouter.py",
+        "/usr/local/lib/hermes-agent/gateway/run.py"
+      ],
+      "purpose": "Intercept natural Telegram artifact requests before generic AI routing and execute artifact workflows directly.",
+      "message_types_affected": [
+        "PDF",
+        "DOCX",
+        "PPTX",
+        "HTML",
+        "artifact-style file delivery requests"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/telegram_artifact_prerouter.py",
+        "/root/.hermes/scripts/hermes_rich_output_execute.py"
+      ],
+      "routing_paths_affected": [
+        "gateway Telegram artifact pre-router"
+      ],
+      "safety_gates_affected": [
+        "artifact request allow-list"
+      ],
+      "known_regressions": [
+        "Later shadowed by the live natural router for common PDF and resend flows."
+      ],
+      "rollback_method": "Revert gateway/run.py artifact pre-router block and remove telegram_artifact_prerouter.py from the live script set.",
+      "still_used": "yes",
+      "risk_level": "medium"
+    },
+    {
+      "phase_name": "PHASE_7F_BTW_SIDE_QUESTION",
+      "commit_hash_if_known": "6364895",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_btw_handler.py",
+        "/root/.hermes/skills/btw-side-question/SKILL.md",
+        "/usr/local/lib/hermes-agent/gateway/run.py"
+      ],
+      "purpose": "Add a read-only side-question route for /btw requests.",
+      "message_types_affected": [
+        "/btw status questions",
+        "/btw recall questions"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_btw_handler.py"
+      ],
+      "routing_paths_affected": [
+        "gateway /btw pre-router"
+      ],
+      "safety_gates_affected": [
+        "read-only /btw restriction"
+      ],
+      "known_regressions": [
+        "Later duplicated by live natural-router ownership of /btw."
+      ],
+      "rollback_method": "Remove /btw pre-router and disable hermes_btw_handler-based side-question handling.",
+      "still_used": "yes",
+      "risk_level": "low"
+    },
+    {
+      "phase_name": "PHASE_7H_BTW_OUTPUT_POLISH",
+      "commit_hash_if_known": "2b65b2c",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_btw_handler.py",
+        "/root/.hermes/skills/btw-side-question/SKILL.md"
+      ],
+      "purpose": "Make /btw replies concise and friendly by default.",
+      "message_types_affected": [
+        "/btw provider status",
+        "/btw recall"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_btw_handler.py"
+      ],
+      "routing_paths_affected": [
+        "/btw handler output format"
+      ],
+      "safety_gates_affected": [
+        "masking of chat IDs and secrets"
+      ],
+      "known_regressions": [],
+      "rollback_method": "Revert hermes_btw_handler.py and restore raw debug-oriented /btw output behavior.",
+      "still_used": "yes",
+      "risk_level": "low"
+    },
+    {
+      "phase_name": "PHASE_7GC_REMINDER_LOOKUP_ACCURACY",
+      "commit_hash_if_known": "07450b3",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_reminder_lookup.py",
+        "/usr/local/lib/hermes-agent/gateway/run.py"
+      ],
+      "purpose": "Stop stale-memory reminder lookup and query cron storage directly.",
+      "message_types_affected": [
+        "next reminder lookup",
+        "named reminder lookup",
+        "upload reminder lookup"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_reminder_lookup.py"
+      ],
+      "routing_paths_affected": [
+        "gateway legacy reminder lookup pre-router"
+      ],
+      "safety_gates_affected": [
+        "storage-backed reminder read requirement"
+      ],
+      "known_regressions": [
+        "Later duplicated by hermes_storage_backed_lookup.py and live natural-router read-only routing."
+      ],
+      "rollback_method": "Remove legacy reminder lookup pre-router and revert to generic model behavior, which is not recommended.",
+      "still_used": "yes",
+      "risk_level": "medium"
+    },
+    {
+      "phase_name": "PHASE_7GD_REMINDER_LOOKUP_OUTPUT_POLISH",
+      "commit_hash_if_known": "9fe3d24",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_reminder_lookup.py",
+        "/usr/local/lib/hermes-agent/gateway/run.py"
+      ],
+      "purpose": "Add friendly Telegram formatting to reminder lookup output.",
+      "message_types_affected": [
+        "friendly reminder lookup replies"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_reminder_lookup.py"
+      ],
+      "routing_paths_affected": [
+        "legacy reminder lookup pre-router output mode"
+      ],
+      "safety_gates_affected": [
+        "reduced raw technical leakage"
+      ],
+      "known_regressions": [
+        "The legacy reminder lookup path remains in the gateway even though a newer storage-backed lookup route exists."
+      ],
+      "rollback_method": "Revert friendly-output changes in hermes_reminder_lookup.py.",
+      "still_used": "yes",
+      "risk_level": "low"
+    },
+    {
+      "phase_name": "PHASE_7JB2_QUERY_FIRST_REMINDER_HANDLING",
+      "commit_hash_if_known": "166d421",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_reminder_intent_guard.py",
+        "/root/.hermes/scripts/hermes_live_natural_router.py",
+        "/root/.hermes/scripts/hermes_model_router.py",
+        "/root/.hermes/scripts/hermes_reminder_intent_validation_test.py"
+      ],
+      "purpose": "Prevent ambiguous reminder messages from falling through to generic model guessing.",
+      "message_types_affected": [
+        "ambiguous reminder inquiry",
+        "tomorrow reminder inquiry",
+        "validated reminder create"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_reminder_intent_guard.py"
+      ],
+      "routing_paths_affected": [
+        "live natural router reminder guard path",
+        "model router tool classification"
+      ],
+      "safety_gates_affected": [
+        "query-first reminder create validation"
+      ],
+      "known_regressions": [
+        "Validated reminder creates still fall back into the generic model path after guard approval."
+      ],
+      "rollback_method": "Remove hermes_reminder_intent_guard.py references from hermes_live_natural_router.py and hermes_model_router.py.",
+      "still_used": "yes",
+      "risk_level": "medium"
+    },
+    {
+      "phase_name": "PHASE_7IE_TASK_AWARE_MODEL_ROUTER",
+      "commit_hash_if_known": "936491b",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_model_router.py",
+        "/root/.hermes/model_routing/routing_policy.yaml",
+        "/root/.hermes/skills/model-router/SKILL.md"
+      ],
+      "purpose": "Add tool-first and task-aware model classification without changing persistent provider defaults.",
+      "message_types_affected": [
+        "provider/model status",
+        "reminder lookups",
+        "reasoning",
+        "coding/debugging",
+        "default chat"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_model_router.py"
+      ],
+      "routing_paths_affected": [
+        "model classification only"
+      ],
+      "safety_gates_affected": [
+        "tool-first routing preference"
+      ],
+      "known_regressions": [
+        "Intent regexes were later duplicated inside the live natural router."
+      ],
+      "rollback_method": "Revert hermes_model_router.py and routing policy changes.",
+      "still_used": "yes",
+      "risk_level": "medium"
+    },
+    {
+      "phase_name": "PHASE_7IF_LIVE_NATURAL_LANGUAGE_ROUTER",
+      "commit_hash_if_known": "7180168",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_live_natural_router.py",
+        "/root/.hermes/scripts/hermes_model_router.py",
+        "/usr/local/lib/hermes-agent/gateway/run.py"
+      ],
+      "purpose": "Insert a live Telegram-first natural-language routing bridge ahead of generic model replies.",
+      "message_types_affected": [
+        "provider status",
+        "reminders",
+        "/btw",
+        "session recall",
+        "coding/debugging",
+        "reasoning",
+        "default chat"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_live_natural_router.py",
+        "/root/.hermes/scripts/hermes_model_router.py"
+      ],
+      "routing_paths_affected": [
+        "gateway early Telegram pre-router",
+        "gateway late per-turn model override"
+      ],
+      "safety_gates_affected": [
+        "tool-first direct response",
+        "route audit logging"
+      ],
+      "known_regressions": [
+        "Created duplicate ownership with legacy /btw, reminder lookup, and artifact gateway pre-routers.",
+        "Direct-response path bypasses the gateway final sanitizer."
+      ],
+      "rollback_method": "Remove early live natural-router bridge and late per-turn model override wiring from gateway/run.py, then revert hermes_live_natural_router.py usage.",
+      "still_used": "yes",
+      "risk_level": "high"
+    },
+    {
+      "phase_name": "PHASE_7JE_LOW_RISK_WRITE_GATE",
+      "commit_hash_if_known": "0a75b81",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_agent_delegate.py",
+        "/root/.hermes/scripts/hermes_live_natural_router.py"
+      ],
+      "purpose": "Add permission-gated low-risk writes without enabling arbitrary execution.",
+      "message_types_affected": [
+        "task note writes",
+        "reminder create/update through delegate path",
+        "file delivery requests",
+        "blocked risky actions"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_agent_delegate.py"
+      ],
+      "routing_paths_affected": [
+        "live natural router risky and low-risk action branches"
+      ],
+      "safety_gates_affected": [
+        "low-risk write allow-list",
+        "risky action block"
+      ],
+      "known_regressions": [
+        "File and resend requests were initially treated as low-risk writes and could be blocked before later artifact-specific fixes."
+      ],
+      "rollback_method": "Revert low-risk write branches in hermes_agent_delegate.py and hermes_live_natural_router.py.",
+      "still_used": "yes",
+      "risk_level": "high"
+    },
+    {
+      "phase_name": "PHASE_7K_LIVE_VERIFIED_NEWS_FILE_STORAGE_LOOKUP",
+      "commit_hash_if_known": "b999941",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_verified_news.py",
+        "/root/.hermes/scripts/hermes_storage_backed_lookup.py",
+        "/root/.hermes/scripts/hermes_file_delivery_verify.py",
+        "/root/.hermes/skills/news-retriever/SKILL.md",
+        "/root/.hermes/scripts/hermes_live_natural_router.py",
+        "/root/.hermes/scripts/hermes_agent_delegate.py"
+      ],
+      "purpose": "Deploy verified news retrieval, storage-backed reminder/upload schedule lookup, file verification, and tool-honesty support.",
+      "message_types_affected": [
+        "latest news requests",
+        "upload schedule",
+        "reminder list",
+        "PDF/file requests"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_verified_news.py",
+        "/root/.hermes/scripts/hermes_storage_backed_lookup.py",
+        "/root/.hermes/scripts/hermes_file_delivery_verify.py"
+      ],
+      "routing_paths_affected": [
+        "live natural router verified-news and file-delivery branches"
+      ],
+      "safety_gates_affected": [
+        "NOT VERIFIED on missing evidence",
+        "storage-backed lookup requirement"
+      ],
+      "known_regressions": [
+        "Initial file verifier still produced placeholder PDFs.",
+        "Artifact resend follow-up was still blocked before later fixes."
+      ],
+      "rollback_method": "Revert the 2026-05-15 verified-news/file-delivery/storage-backed script set to the previous mirror commit.",
+      "still_used": "yes",
+      "risk_level": "high"
+    },
+    {
+      "phase_name": "PHASE_7K_B_ARTIFACT_QUALITY_AND_NEWS_POLISH",
+      "commit_hash_if_known": "39bf27e",
+      "files_changed": [
+        "/root/.hermes/scripts/hermes_file_delivery_verify.py",
+        "/root/.hermes/scripts/telegram_artifact_prerouter.py",
+        "/root/.hermes/scripts/hermes_live_natural_router.py",
+        "/root/.hermes/scripts/hermes_verified_news.py",
+        "/root/.hermes/artifacts/latest_artifacts.jsonl"
+      ],
+      "purpose": "Improve content PDF quality, artifact resend, multi-step artifact flow, and news presentation polish.",
+      "message_types_affected": [
+        "PDF",
+        "Show me the file here in Telegram",
+        "multi-step artifact sequences",
+        "grouped news briefing"
+      ],
+      "tool_paths_affected": [
+        "/root/.hermes/scripts/hermes_file_delivery_verify.py",
+        "/root/.hermes/scripts/telegram_artifact_prerouter.py",
+        "/root/.hermes/scripts/hermes_verified_news.py"
+      ],
+      "routing_paths_affected": [
+        "live natural router direct file-delivery branch",
+        "artifact registry resend path"
+      ],
+      "safety_gates_affected": [
+        "content verification before PDF success",
+        "Telegram ok=true before delivery claim"
+      ],
+      "known_regressions": [
+        "PDF topic resolution now depends on latest session context and can bind to the wrong topic after a later factual question."
+      ],
+      "rollback_method": "Revert the 2026-05-15 artifact-quality/news-polish mirror commit and restore the earlier verified file-delivery scripts.",
+      "still_used": "yes",
+      "risk_level": "high"
+    },
+    {
+      "phase_name": "GATEWAY_LOCAL_RUNTIME_DRIFT",
+      "commit_hash_if_known": "working_tree_only",
+      "files_changed": [
+        "/usr/local/lib/hermes-agent/gateway/run.py",
+        "/usr/local/lib/hermes-agent/tools/cronjob_tools.py",
+        "/usr/local/lib/hermes-agent/cron/scheduler.py",
+        "/usr/local/lib/hermes-agent/cron/jobs.py"
+      ],
+      "purpose": "Local live runtime modifications affecting Telegram routing, output sanitization, reminder scheduling, and reminder delivery verification.",
+      "message_types_affected": [
+        "all Telegram text messages",
+        "all reminder creates and deliveries",
+        "cron reminder execution",
+        "final response sanitization"
+      ],
+      "tool_paths_affected": [
+        "/usr/local/lib/hermes-agent/tools/cronjob_tools.py",
+        "/usr/local/lib/hermes-agent/tools/send_message_tool.py"
+      ],
+      "routing_paths_affected": [
+        "gateway Telegram pre-routers",
+        "generic main-agent path",
+        "cron reminder delivery path"
+      ],
+      "safety_gates_affected": [
+        "response sanitizer",
+        "reminder delivery audit",
+        "standalone Telegram reminder send verification"
+      ],
+      "known_regressions": [
+        "Dirty live runtime means the audit cannot rely on a single committed gateway source of truth.",
+        "Local reminder and routing behavior may diverge from the upstream gateway repo."
+      ],
+      "rollback_method": "Create a dedicated gateway repo rollback plan; current state cannot be safely described as one semantic phase commit.",
+      "still_used": "yes",
+      "risk_level": "critical"
+    }
+  ]
+}
