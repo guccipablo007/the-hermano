@@ -41,7 +41,19 @@ ROUTE_QUESTION_RE = re.compile(r'\b(which|what)\s+(route|model|provider)\b|\brou
 DEBUG_DETAIL_RE = re.compile(r'```|traceback:|stack trace|\bline\s+\d+\b|\berror:\s*\S+|journalctl|systemctl status|firebase.*(permission-denied|unavailable|error code)', re.I)
 NEWS_INTENT_RE = re.compile(r'\b(news|headlines|briefing)\b|\buse\s+your\s+web\s+skills\b', re.I)
 UPLOAD_SCHEDULE_RE = re.compile(r"\bwhat(?:'s| is)\s+my\s+upload\s+schedule\b|\bupload\s+schedule\b", re.I)
+STORAGE_LOOKUP_RE = re.compile(
+    r"^\s*any\s+reminders\??\s*$|"
+    r"\b(show|list)\b.*\b(reminders|alerts)\b|"
+    r"\bwhat\s+(reminders|alerts)\s+do\s+i\s+have\b|"
+    r"\bwhat(?:'s| is)\s+my\s+upload\s+schedule\b|\bupload\s+schedule\b",
+    re.I,
+)
 FILE_WRITE_RE = re.compile(r'^\s*pdf\s*$|\b(create|generate|make|build)\b.*\b(pdf|document|report|briefing|file)\b|\b(send|deliver|upload)\b.*\btelegram\b|\btelegram\b|\bshow\s+me\s+the\s+file\b', re.I)
+HTML_BUILD_RE = re.compile(
+    r'\b(build|create|generate|make)\b.*\b(html|css|web\s*page|webpage|website|landing\s*page|page)\b|'
+    r'\bhtml/css\b|\blanding\s*page\b',
+    re.I,
+)
 FACTUAL_QA_RE = re.compile(
     r'^\s*(who|what|when|where|which|did|is|was)\b.*\b('
     r'first|ever|invented|made|created|capital\s+of|electric\s+air\s*plane|'
@@ -215,9 +227,7 @@ def parse_delegate_output(text: str) -> dict[str, str]:
 
 
 def risky_execution_block_response(message: str) -> str:
-    return ('Your Majesty, that live delegated action is blocked as risky.\n\n'
-            'I did not execute it. Live delegated execution is currently limited to read-only checks. '
-            'I can prepare a dry-run plan instead.')
+    return 'Your Majesty, that action is blocked in Lite Mode. I did not execute it.'
 
 
 def is_risky_live_execution(message: str) -> bool:
@@ -325,6 +335,20 @@ def verified_fact_response(message: str) -> str:
     if rc != 0:
         return 'Your Majesty, I could not verify that factual answer.\n\nNOT VERIFIED'
     return out.strip() or 'Your Majesty, I could not verify that factual answer.\n\nNOT VERIFIED'
+
+
+def storage_backed_lookup_response(message: str) -> str:
+    cmd = pycmd(
+        SCRIPTS / 'hermes_storage_backed_lookup.py',
+        'upload-schedule' if UPLOAD_SCHEDULE_RE.search(message or '') else 'any-reminders',
+        '--format',
+        'friendly',
+    )
+    rc, out = run(cmd, timeout=45)
+    if rc != 0 or not out.strip():
+        return 'Your Majesty, I could not verify that from storage.\n\nNOT VERIFIED'
+    return out.strip()
+
 
 def dry_run_delegation_response(message: str) -> str:
     rc, out = run(pycmd(DELEGATE_SCRIPT, 'delegate', message or '', '--dry-run'), timeout=60)
@@ -466,12 +490,17 @@ def handle(message: str) -> dict[str, Any]:
         _, response = run(pycmd(SCRIPTS / 'hermes_verified_news.py', 'from-query', message or '', '--format', news_format), timeout=180)
         decision = {'route': 'tool', 'tool': 'hermes_verified_news', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'verified web/news retrieval'}
         tool = 'hermes_verified_news'
+    elif STORAGE_LOOKUP_RE.search(message or ''):
+        direct = True
+        response = storage_backed_lookup_response(message or '')
+        decision = {'route': 'tool', 'tool': 'hermes_storage_backed_lookup', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'Lite Mode storage-backed lookup'}
+        tool = 'hermes_storage_backed_lookup'
     elif is_dry_run_delegation_intent(message or ''):
         direct = True
         response = dry_run_delegation_response(message or '')
         decision = {'route': 'tool', 'tool': 'hermes_agent_delegate_dry_run', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'safe dry-run delegation plan'}
         tool = 'hermes_agent_delegate_dry_run'
-    elif FILE_WRITE_RE.search(message or ''):
+    elif HTML_BUILD_RE.search(message or '') or FILE_WRITE_RE.search(message or ''):
         direct = True
         response = verified_file_response(message or '')
         decision = {'route': 'tool', 'tool': 'hermes_file_delivery_verify', 'provider': 'NewCoin', 'model': 'qwen3-32b', 'reason': 'trusted-vps verified file generation and delivery'}

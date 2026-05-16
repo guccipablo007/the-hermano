@@ -24,10 +24,12 @@ def resolve_base() -> Path:
 
 BASE = resolve_base()
 OUTPUT_DIR = BASE / "file_outputs"
+HTML_OUTPUT_DIR = BASE / "newcoin_outputs"
 TMP_DIR = BASE / "telegram_outputs"
 ARTIFACT_REGISTRY = BASE / "artifacts" / "latest_artifacts.jsonl"
-APPROVED_DIRS = [OUTPUT_DIR, TMP_DIR]
+APPROVED_DIRS = [OUTPUT_DIR, HTML_OUTPUT_DIR, TMP_DIR]
 DELIVER = BASE / "scripts" / "hermes_telegram_deliver.py"
+RICH_EXECUTE = BASE / "scripts" / "hermes_rich_output_execute.py"
 SESSIONS_INDEX = BASE / "sessions" / "sessions.json"
 SESSIONS_DIR = BASE / "sessions"
 
@@ -41,7 +43,46 @@ RESEND_RE = re.compile(
     re.I,
 )
 PDF_RE = re.compile(r"^\s*pdf(?:\s+only)?\s*$|\bpdf\b", re.I)
+HTML_BUILD_RE = re.compile(
+    r"\b(build|create|generate|make)\b.*\b(html|css|web\s*page|webpage|website|landing\s*page|page)\b|"
+    r"\bhtml/css\b|\blanding\s*page\b",
+    re.I,
+)
 ELECTRIC_CAR_RE = re.compile(r"\bfirst\s+ever\s+electric\s+car\b|\bwho\s+made\s+the\s+first\s+electric\s+car\b", re.I)
+BACKEND_COMMAND_RE = re.compile(
+    r"/root/\.hermes/scripts/\S+|hermes_rich_output_execute\.py|hermes_router_execute\.py|EXECUTED_COMMAND=",
+    re.I,
+)
+
+
+def sanitize_user_text(text: str) -> str:
+    cleaned_lines: list[str] = []
+    in_backend_fence = False
+    fence_buffer: list[str] = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if in_backend_fence:
+                if not any(BACKEND_COMMAND_RE.search(buf) for buf in fence_buffer):
+                    cleaned_lines.extend(fence_buffer)
+                    cleaned_lines.append(line)
+                in_backend_fence = False
+                fence_buffer = []
+            else:
+                in_backend_fence = True
+                fence_buffer = [line]
+            continue
+        if in_backend_fence:
+            fence_buffer.append(line)
+            continue
+        if BACKEND_COMMAND_RE.search(line):
+            continue
+        cleaned_lines.append(line)
+    if in_backend_fence and not any(BACKEND_COMMAND_RE.search(buf) for buf in fence_buffer):
+        cleaned_lines.extend(fence_buffer)
+    cleaned = "\n".join(cleaned_lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
 
 
 def mask(text: Any) -> str:
@@ -285,6 +326,7 @@ def known_topic_profile(topic: str, assistant_answer: str) -> dict[str, Any] | N
 
 def generic_profile(topic: str, assistant_answer: str) -> dict[str, Any]:
     title = topic.strip(" ?.") or "Hermes Educational PDF"
+    assistant_answer = sanitize_user_text(assistant_answer)
     answer = assistant_answer.strip() or f"Summary topic: {title}"
     body_lines = [line.strip("-* ").strip() for line in assistant_answer.splitlines() if line.strip()]
     if not body_lines:
@@ -310,9 +352,13 @@ def generic_profile(topic: str, assistant_answer: str) -> dict[str, Any]:
 def build_profile(message: str, transcript: list[dict[str, Any]]) -> dict[str, Any]:
     steps = parse_steps(message)
     question_step = next((step for step in steps if QUESTION_RE.search(step) and not artifact_like(step)), "")
+    explicit_title = ""
+    title_match = re.search(r"\b(?:titled|called)\s+(.+?)(?:[.!?]\s*$|$)", message or "", re.I)
+    if title_match:
+        explicit_title = title_match.group(1).strip(" .,:;\"'")
     session_topic, session_answer = find_latest_topic_context(transcript)
-    topic = question_step or session_topic or "Hermes Educational PDF"
-    assistant_answer = session_answer
+    topic = explicit_title or question_step or session_topic or "Hermes Educational PDF"
+    assistant_answer = sanitize_user_text(session_answer)
     profile = known_topic_profile(topic, assistant_answer)
     if profile:
         return profile
@@ -379,8 +425,8 @@ def chat_target(record: dict[str, Any] | None) -> tuple[str, str]:
     return chat_id, mask(chat_id)
 
 
-def run_delivery(path: Path, caption: str, chat_id: str = "") -> dict[str, Any]:
-    cmd = [sys.executable, str(DELIVER), "--file", str(path), "--caption", caption, "--preview-link", "no"]
+def run_delivery(path: Path, caption: str, chat_id: str = "", preview_link: str = "no") -> dict[str, Any]:
+    cmd = [sys.executable, str(DELIVER), "--file", str(path), "--caption", caption, "--preview-link", preview_link]
     if chat_id:
         cmd.extend(["--chat-id", chat_id])
     try:
@@ -407,6 +453,144 @@ def run_delivery(path: Path, caption: str, chat_id: str = "") -> dict[str, Any]:
         "stdout": mask(proc.stdout),
         "stderr": mask(proc.stderr),
         "reason": "" if ok else "DELIVERY_NOT_VERIFIED",
+    }
+
+
+def run_text_fallback(path: Path, chat_id: str = "") -> dict[str, Any]:
+    cmd = [sys.executable, str(DELIVER), "--text-file", str(path)]
+    if chat_id:
+        cmd.extend(["--chat-id", chat_id])
+    try:
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=180)
+    except Exception as exc:
+        return {"attempted": True, "ok": False, "reason": f"TEXT_FALLBACK_EXCEPTION:{type(exc).__name__}", "stdout": "", "stderr": mask(exc)}
+    combined = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+    ok = proc.returncode == 0 and "TELEGRAM_API_OK=true" in combined and "TELEGRAM_DELIVERY=PASSED" in combined
+    return {"attempted": True, "ok": ok, "returncode": proc.returncode, "stdout": mask(proc.stdout), "stderr": mask(proc.stderr), "reason": "" if ok else "TEXT_FALLBACK_NOT_VERIFIED"}
+
+
+def html_required_terms(message: str) -> tuple[list[str], list[list[str]]]:
+    low = (message or "").lower()
+    required: list[str] = []
+    for term in ["coffee", "pastry"]:
+        if term in low:
+            required.append(term)
+    if "landing" in low or "page" in low or "shop" in low:
+        required.append("menu")
+    any_groups = [["contact", "location"]]
+    return required, any_groups
+
+
+def verify_html_file(path: Path, message: str) -> dict[str, Any]:
+    required, any_groups = html_required_terms(message)
+    exists = path.exists()
+    size = path.stat().st_size if exists else 0
+    extension = path.suffix.lower()
+    approved_dir = exists and inside_approved(path)
+    text = path.read_text(encoding="utf-8", errors="ignore") if exists else ""
+    lower = text.lower()
+    format_ok = extension == ".html" and size > 0 and ("<!doctype html" in lower or "<html" in lower)
+    css_ok = "<style" in lower or "rel=\"stylesheet\"" in lower or "rel='stylesheet'" in lower or ".css" in lower
+    matched_terms = [term for term in required if term.lower() in lower]
+    missing_terms = [term for term in required if term.lower() not in lower]
+    any_group_results = []
+    for group in any_groups:
+        matched = [term for term in group if term.lower() in lower]
+        any_group_results.append({"terms": group, "matched": matched, "ok": bool(matched)})
+    content_verified = bool(format_ok and css_ok and not missing_terms and all(row["ok"] for row in any_group_results))
+    return {
+        "path": str(path),
+        "exists": exists,
+        "size": size,
+        "extension": extension,
+        "format_ok": format_ok,
+        "css_ok": css_ok,
+        "approved_dir": approved_dir,
+        "verified": bool(exists and approved_dir and format_ok and css_ok),
+        "content_verified": content_verified,
+        "matched_terms": matched_terms,
+        "missing_terms": missing_terms,
+        "any_term_groups": any_group_results,
+    }
+
+
+def parse_output_path(text: str) -> Path | None:
+    for line in (text or "").splitlines():
+        if line.startswith("OUTPUT_PATH="):
+            value = line.split("=", 1)[1].strip()
+            if value:
+                return Path(value)
+    return None
+
+
+def build_html_user_output(file_info: dict[str, Any], delivery: dict[str, Any], fallback: dict[str, Any], code: str) -> str:
+    if file_info.get("content_verified") and delivery.get("ok"):
+        return "I created and sent the verified HTML landing page in Telegram.\nCONTENT_VERIFIED=true\nTELEGRAM_API_OK=true"
+    if file_info.get("content_verified") and fallback.get("ok"):
+        return "I created the verified HTML landing page. File delivery failed, so I pasted the complete HTML/CSS code in Telegram.\nCONTENT_VERIFIED=true\nTELEGRAM_FILE_DELIVERY_OK=false\nCODE_FALLBACK_OK=true"
+    lines = ["NOT VERIFIED"]
+    if not file_info.get("content_verified"):
+        lines.append("REASON=HTML_CONTENT_VERIFICATION_FAILED")
+    elif not delivery.get("ok"):
+        lines.append("REASON=TELEGRAM_DELIVERY_NOT_VERIFIED")
+    if code:
+        lines.append("HTML_CODE_FALLBACK_START")
+        lines.append(code)
+        lines.append("HTML_CODE_FALLBACK_END")
+    return "\n".join(lines).strip()
+
+
+def create_or_send_html(message: str, chat_id_override: str = "") -> dict[str, Any]:
+    record = latest_session_record()
+    chat_id, chat_mask = chat_target(record)
+    if chat_id_override:
+        chat_id = chat_id_override
+        chat_mask = mask(chat_id_override)
+    cmd = [sys.executable, str(RICH_EXECUTE), "--request", message, "--no-deliver-telegram"]
+    try:
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=420)
+    except Exception as exc:
+        file_info = {"path": "", "exists": False, "size": 0, "extension": ".html", "format_ok": False, "css_ok": False, "approved_dir": False, "verified": False, "content_verified": False}
+        return {"verification_status": "NOT VERIFIED", "summary": f"HTML generation failed: {type(exc).__name__}", "file": file_info, "telegram_delivery": {"attempted": False, "ok": False}, "code_fallback": {"attempted": False, "ok": False}, "user_output": "NOT VERIFIED\nREASON=HTML_GENERATION_EXCEPTION"}
+    output_path = parse_output_path(proc.stdout) or (HTML_OUTPUT_DIR / "hermes-html-output.html")
+    file_info = verify_html_file(output_path, message)
+    code = Path(file_info["path"]).read_text(encoding="utf-8", errors="ignore") if file_info.get("exists") else ""
+    delivery = {"attempted": False, "ok": False, "reason": "HTML_NOT_VERIFIED"}
+    fallback = {"attempted": False, "ok": False, "reason": "NOT_NEEDED"}
+    if proc.returncode == 0 and file_info.get("content_verified"):
+        delivery = run_delivery(output_path, "Your Majesty, here is your verified HTML landing page: " + output_path.name, chat_id=chat_id, preview_link="auto")
+        if not delivery.get("ok"):
+            fallback = run_text_fallback(output_path, chat_id=chat_id)
+    verified = bool(file_info.get("content_verified") and (delivery.get("ok") or fallback.get("ok")))
+    delivery_status = "delivered" if delivery.get("ok") else "code_fallback" if fallback.get("ok") else "delivery_failed"
+    artifact = register_artifact(
+        intent=message,
+        artifact_type="html",
+        path=file_info.get("path", ""),
+        title=Path(file_info.get("path") or "html-output.html").stem,
+        content_verified=bool(file_info.get("content_verified")),
+        delivery_status=delivery_status,
+        telegram_ok=bool(delivery.get("ok")),
+        chat_mask=chat_mask,
+        source_context_summary="Built from the current Lite Mode HTML/CSS request and verified before same-chat delivery.",
+    )
+    return {
+        "verification_status": "VERIFIED" if verified else "NOT VERIFIED",
+        "summary": "Verified HTML created and delivered." if delivery.get("ok") else "Verified HTML created with code fallback." if fallback.get("ok") else "HTML generation or delivery is not verified.",
+        "file": file_info,
+        "telegram_delivery": delivery,
+        "code_fallback": fallback,
+        "artifact": artifact,
+        "generator_returncode": proc.returncode,
+        "user_output": build_html_user_output(file_info, delivery, fallback, code if not fallback.get("ok") and not delivery.get("ok") else ""),
+        "evidence": [
+            {"type": "file_exists", "path": file_info.get("path"), "size": file_info.get("size")},
+            {"type": "html_format", "format_ok": file_info.get("format_ok"), "extension": file_info.get("extension")},
+            {"type": "css", "css_ok": file_info.get("css_ok")},
+            {"type": "content_terms", "content_verified": file_info.get("content_verified"), "matched_terms": file_info.get("matched_terms"), "missing_terms": file_info.get("missing_terms"), "any_term_groups": file_info.get("any_term_groups")},
+            {"type": "telegram_delivery", "ok": delivery.get("ok"), "returncode": delivery.get("returncode")},
+            {"type": "code_fallback", "ok": fallback.get("ok"), "returncode": fallback.get("returncode")},
+        ],
     }
 
 
@@ -480,6 +664,7 @@ def register_artifact(
 
 def build_user_output(answer: str, status: str, file_info: dict[str, Any], delivery: dict[str, Any], created: bool) -> str:
     lines: list[str] = []
+    answer = sanitize_user_text(answer)
     if answer:
         lines.extend(answer.splitlines())
         lines.append("")
@@ -583,9 +768,11 @@ def resend_latest_pdf(message: str) -> dict[str, Any]:
     }
 
 
-def from_message(message: str) -> dict[str, Any]:
+def from_message(message: str, chat_id_override: str = "") -> dict[str, Any]:
     low = (message or "").strip().lower()
     steps = parse_steps(message)
+    if HTML_BUILD_RE.search(message or ""):
+        return create_or_send_html(message, chat_id_override=chat_id_override)
     if RESEND_RE.search(low) and not any(PDF_RE.search(step) and not RESEND_RE.search(step) for step in steps):
         return resend_latest_pdf(message)
 
@@ -635,6 +822,7 @@ def main() -> int:
     p_message = sub.add_parser("from-message")
     p_message.add_argument("message")
     p_message.add_argument("--format", choices=["friendly", "json"], default="friendly")
+    p_message.add_argument("--chat-id", default="")
 
     args = parser.parse_args()
     if args.cmd == "generate-test-pdf":
@@ -651,7 +839,7 @@ def main() -> int:
         file_info = verify_file(Path(args.path), args.require)
         data = {"verification_status": "VERIFIED" if file_info["verified"] and (file_info["content_verified"] or not args.require) else "NOT VERIFIED", "file": file_info}
     else:
-        data = from_message(args.message)
+        data = from_message(args.message, chat_id_override=getattr(args, "chat_id", ""))
 
     if args.format == "json":
         print(json.dumps(data, ensure_ascii=False))

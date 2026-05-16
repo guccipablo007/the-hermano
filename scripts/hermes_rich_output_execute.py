@@ -63,6 +63,7 @@ def main():
     parser.add_argument("--request", required=True)
     parser.add_argument("--output", default="")
     parser.add_argument("--no-deliver-telegram", action="store_true")
+    parser.add_argument("--show-command", action="store_true")
     args = parser.parse_args()
 
     plan_proc = run(f"{PLAN} --request {q(args.request)} --json", timeout=120)
@@ -78,7 +79,9 @@ def main():
     cmd = build_command(route, output, title, topic, age, slide_count, args.request)
     if args.no_deliver_telegram: cmd += " --no-deliver-telegram"
     exec_proc = run(cmd, timeout=360)
-    print("RICH_OUTPUT_EXECUTION_PLAN=PASSED"); print("REQUEST=" + args.request); print("OUTPUT_FORMAT=" + str(output_format)); print("CONTENT_TYPE=" + str(content_type)); print("VISUAL_POLICY=" + str(visual_policy)); print("ROUTE=" + str(route)); print("ROUTE_IMPLEMENTED=" + str(route_implemented).upper()); print("OUTPUT_PATH=" + str(output)); print("EXECUTED_COMMAND=" + cmd)
+    print("RICH_OUTPUT_EXECUTION_PLAN=PASSED"); print("REQUEST=" + args.request); print("OUTPUT_FORMAT=" + str(output_format)); print("CONTENT_TYPE=" + str(content_type)); print("VISUAL_POLICY=" + str(visual_policy)); print("ROUTE=" + str(route)); print("ROUTE_IMPLEMENTED=" + str(route_implemented).upper()); print("OUTPUT_PATH=" + str(output))
+    if args.show_command:
+        print("EXECUTED_COMMAND=" + cmd)
     print("ROUTER_STDOUT_START"); print(exec_proc.stdout.strip()); print("ROUTER_STDOUT_END")
     if exec_proc.stderr.strip(): print("ROUTER_STDERR_START"); print(exec_proc.stderr.strip()); print("ROUTER_STDERR_END")
     if exec_proc.returncode != 0:

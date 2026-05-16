@@ -133,36 +133,94 @@ def print_success(path: Path, preview_url: str, response: dict[str, Any]) -> Non
     print("HTTP_STATUS=" + str(response.get("_http_status")))
 
 
-def print_failure(path: Path, reason: str, response: dict[str, Any] | None = None) -> None:
+def print_text_success(chunks: int, response: dict[str, Any]) -> None:
+    print("TELEGRAM_DELIVERY=PASSED")
+    print("TELEGRAM_API_OK=true")
+    print("TEXT_SENT=yes")
+    print("TEXT_CHUNKS=" + str(chunks))
+    print("HTTP_STATUS=" + str(response.get("_http_status")))
+
+
+def print_failure(path: Path | None, reason: str, response: dict[str, Any] | None = None) -> None:
     print("NOT VERIFIED")
     print("TELEGRAM_DELIVERY=FAILED")
     print("TELEGRAM_API_OK=false")
-    print("FILE=" + str(path))
+    if path is not None:
+        print("FILE=" + str(path))
     print("REASON=" + mask(reason))
     if response:
         print("TELEGRAM_RESPONSE=" + mask(json.dumps({"ok": response.get("ok"), "description": response.get("description")}, ensure_ascii=False)))
 
 
+def chunk_text(text: str, limit: int = 3900) -> list[str]:
+    text = text or ""
+    if not text:
+        return [""]
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= limit:
+            chunks.append(remaining)
+            break
+        split_at = remaining.rfind("\n", 0, limit)
+        if split_at < limit // 2:
+            split_at = limit
+        chunks.append(remaining[:split_at].rstrip())
+        remaining = remaining[split_at:].lstrip("\n")
+    return chunks
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Send Hermes outputs directly to Telegram.")
-    parser.add_argument("--file", required=True)
+    parser.add_argument("--file", default="")
+    parser.add_argument("--text", default="")
+    parser.add_argument("--text-file", default="")
     parser.add_argument("--caption", default="")
     parser.add_argument("--preview-link", choices=["yes", "no", "auto"], default="auto")
     parser.add_argument("--chat-id")
     args = parser.parse_args()
 
+    try:
+        token, default_chat_id = find_token_and_chat()
+    except SystemExit as exc:
+        print_failure(None, str(exc))
+        return 2
+
+    chat_id = args.chat_id or default_chat_id
+    if args.text or args.text_file:
+        text = args.text
+        if args.text_file:
+            text_path = Path(args.text_file)
+            if not is_allowed_path(text_path):
+                print_failure(text_path, f"TEXT_FILE_NOT_ALLOWED_OR_NOT_FOUND:{text_path}")
+                return 2
+            text = text_path.read_text(encoding="utf-8", errors="ignore")
+        if not text:
+            print_failure(None, "TEXT_EMPTY")
+            return 2
+        last_response: dict[str, Any] = {}
+        chunks = chunk_text(text)
+        for idx, chunk in enumerate(chunks, 1):
+            prefix = "" if len(chunks) == 1 else f"Part {idx}/{len(chunks)}\n"
+            try:
+                last_response = telegram_api(token, "sendMessage", {"chat_id": chat_id, "text": prefix + chunk, "disable_web_page_preview": "true"})
+            except Exception as exc:
+                print_failure(None, f"SEND_TEXT_EXCEPTION:{type(exc).__name__}")
+                return 3
+            if last_response.get("ok") is not True:
+                print_failure(None, "SEND_TEXT_NOT_OK", last_response)
+                return 4
+        print_text_success(len(chunks), last_response)
+        return 0
+
+    if not args.file:
+        print_failure(None, "FILE_OR_TEXT_REQUIRED")
+        return 2
     path = Path(args.file)
     if not is_allowed_path(path):
         print_failure(path, f"FILE_NOT_ALLOWED_OR_NOT_FOUND:{path}")
         return 2
 
-    try:
-        token, default_chat_id = find_token_and_chat()
-    except SystemExit as exc:
-        print_failure(path, str(exc))
-        return 2
-
-    chat_id = args.chat_id or default_chat_id
     caption = args.caption or f"Hermes output: {path.name}"
     try:
         document_response = telegram_api(token, "sendDocument", {"chat_id": chat_id, "caption": caption[:1000]}, file_path=str(path))
