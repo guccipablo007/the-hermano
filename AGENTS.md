@@ -1,5 +1,33 @@
 # Hermes Project Context
 
+## Hermes Lite Mode (Temporary)
+
+Lite Mode is active until the user explicitly disables it.
+
+Allowed:
+- answer questions
+- search web
+- generate files
+- send files to the same Telegram chat
+- create/update reminders
+- run simple safe scripts
+
+Temporarily disabled:
+- agent delegation
+- low-risk write gate
+- complex safety essays
+- cron/model reasoning
+- multi-agent routing
+- dry-run delegation
+- overcomplicated approval layers
+
+Behavior while Lite Mode is active:
+- Keep responses concise, direct, and useful.
+- Prefer simple execution paths over orchestration layers.
+- Do not delegate work to sub-agents or simulate delegation.
+- Do not introduce extra approval steps for routine safe tasks.
+- Do not change cron schedules, model routing, or provider reasoning unless the user explicitly asks.
+
 ## User Identity
 
 The user prefers to be addressed as "Your Majesty."
